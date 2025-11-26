@@ -8,7 +8,7 @@ Choose a repo-name of 30 characters or less to prevent **Windows developers** fr
 Tested on:
 | Ubuntu 24.04 with: | Windows 11 with: | MacOS with: |
 |-------|---------|-------|
-|- npm 9.2.0<br />- node 20.11.0<br />- rustc 1.83.0 -- `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` | - npm 10.7.0<br />- node 20.11.0<br />- rustc 1.83.0 -- See https://www.rust-lang.org/tools/install<br />- cmake 3.31.0 -- Version 3 is required. See https://cmake.org/download/ | - npm 10.7.0 (tested on Monterey)<br />- npm 10.8.2 (tested on Sequoia)<br />- node 20.11.0<br />- rustc 1.88.0 -- `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh`<br />- OpenSSL 3.5.0 -- `brew install openssl` |
+|- npm 9.2.0<br />- node 20.11.0<br />- rustc 1.88.0 -- `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` | - npm 10.7.0<br />- node 20.11.0<br />- rustc 1.88.0 -- See https://www.rust-lang.org/tools/install<br />- cmake 3.31.0 -- Version 3 is required. See https://cmake.org/download/ | - npm 10.7.0 (tested on Monterey)<br />- npm 10.8.2 (tested on Sequoia)<br />- node 20.11.0<br />- rustc 1.88.0 -- `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh`<br />- OpenSSL 3.5.0 -- `brew install openssl` |
 
 ## Setup
 
@@ -27,7 +27,7 @@ Tested on:
 npm install
 </pre></ul>
 
-4. Edit app_config.env, entering the App Name, version number, theme, assets (might not change), and clients.
+4. Edit app_config.env, entering the App Name, version number, Apps Short Name for working directory, assets, and clients.
 5. Change /globalBuildResources/theme.json directly to customize your app. And for logos, see the [Branding README](/branding/README.md) for scripts for customizing /globalBuildResources/*.ico, /globalBuildResources/*.png, and /globalBuildResources/icon.icns, along with info on how each is used.
 6. `cd [os]/scripts`
 7. Run<sup id="a1">[[1]](#f1)</sup> the `clone` script to clone all repos listed in `app_config.env` (assets and clients)
