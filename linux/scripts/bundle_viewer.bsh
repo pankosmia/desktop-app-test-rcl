@@ -48,9 +48,11 @@ chmod 755 $INSTALL_DIR/bin/server.bin
 # Electron app
 cp -r $FROM_DIR/linux/viewer/project/payload/app/electron/* $INSTALL_DIR/viewer/
 chmod 755 $INSTALL_DIR/viewer/
+cp -r $FROM_DIR/linux/viewer/project/payload/app/find_free_port.sh $INSTALL_DIR/
+chmod 755 $INSTALL_DIR/find_free_port.sh
 
 # Icon
-cp $FROM_DIR/globalBuildResources/favicon@2x.png $INSTALL_DIR/$PACKAGE_NAME.png
+cp $FROM_DIR/globalBuildResources/linux_icon.png $INSTALL_DIR/$PACKAGE_NAME.png
 
 # Copy launcher, replacing placeholders with actual values
 cp $FROM_DIR/linux/buildResources/launcher.sh $TO_DIR/usr/bin/$PACKAGE_NAME
