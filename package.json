@@ -1,7 +1,7 @@
 {
-  "name": "desktop-app-template",
+  "name": "desktop-app-test-rcl",
   "version": "0.1.0",
-  "description": "Customizable repo template for development and release of desktop apps built on Pankosmia: It assembles an executable and resources from other Pankosmia repos.",
+  "description": "This repo is for development and release of Desktop App Test RCL, built on Pankosmia for Pankosmia. It assembles an executable and resources from other Pankosmia repos.",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
