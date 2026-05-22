@@ -1,0 +1,20 @@
+{
+  "organizations": [
+    {
+      "name": "BurritoTruck",
+      "url": "git.door43.org/BurritoTruck"
+    },
+    {
+      "name": "UnfoldingWord (SB resources)",
+      "url": "git.door43.org/uW"
+    },
+      {
+      "name": "UnfoldingWord",
+      "url": "git.door43.org/unfoldingWord"
+    },
+    {
+        "name":"Aquifer",
+        "url":"git.door43.org/shower"
+    }
+  ]
+}
