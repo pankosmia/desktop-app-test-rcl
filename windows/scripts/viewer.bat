@@ -9,7 +9,8 @@ echo ========================
 echo(
 echo Starting electronite viewer, accessing the development build environment running at port shown below:
 
-REM Using devevelopment server.
+REM Using development environment server.
+set START_SERVER=false
 
 REM Starting electronite viewer, accessing the development build environment
 
