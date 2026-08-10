@@ -1,7 +1,6 @@
 const path = require('path');
 const fs = require('fs-extra');
 const copyDir = require('copy-dir');
-const crypto = require('crypto');
 require('@dotenvx/dotenvx').config({
   path: ['../../app_config.env'],
   quiet: true
