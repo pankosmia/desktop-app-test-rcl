@@ -138,15 +138,6 @@ done
 
 echo "Successfully copied node_modules dependencies"
 
-# Determine which startup to use -- dev viewer or production
-if [[ $devRun =~ ^(-d) ]]; then
-  rm ${APP_BASE_DIR}/Contents/electron/electronStartup.js
-  cp ${APP_BASE_DIR}/Contents/electron/electronDevStartup.js ${APP_BASE_DIR}/Contents/electron/electronStartup.js
-  rm ${APP_BASE_DIR}/Contents/electron/electronDevStartup.js
-else
-  rm ${APP_BASE_DIR}/Contents/electron/electronDevStartup.js
-fi
-
 # Replace all occurrences of ${APP_NAME} and ${APP_VERSION} in startup script
 sed -i.bak "s/\${APP_NAME}/$APP_NAME/g" "${APP_BASE_DIR}/Contents/electron/electronStartup.js"  # Replace all occurrences of ${APP_NAME}
 sed -i.bak "s/\${APP_NAME}/$APP_NAME/g" "${APP_BASE_DIR}/Contents/electron/package.json"  # Replace all occurrences of ${APP_NAME}

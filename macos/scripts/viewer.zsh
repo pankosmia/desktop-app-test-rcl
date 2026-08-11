@@ -13,7 +13,8 @@ echo "========================"
 echo "Starting up:"
 echo "Starting electronite viewer, accessing the development build environment running at port shown below:"
 
-# Using development server.
+# Using development environment server.
+export START_SERVER="false"
 
 # Starting electronite viewer, accessing the development build environment
 
