@@ -188,15 +188,6 @@ try {
         }
 
         Write-Host "Successfully copied node_modules dependencies"
-
-        # Determine which startup to use -- dev viewer or production
-        if ($Dev -eq "Y") {
-          Remove-Item $electronDestPath\electronStartup.js
-          Copy-Item $electronDestPath\electronDevStartup.js $electronDestPath\electronStartup.js
-          Remove-Item $electronDestPath\electronDevStartup.js
-        } else {
-          Remove-Item $electronDestPath\electronDevStartup.js
-        }
         
         # Replace all occurrences of ${APP_NAME} and ${APP_VERSION} in startup script
         (Get-Content $electronDestPath\electronStartup.js).Replace('${APP_NAME}', $env:APP_NAME) | Set-Content $electronDestPath\electronStartup.js

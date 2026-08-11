@@ -43,9 +43,13 @@ const FFMPEG_DIR = path.join(FFMPEG_BASE_DIR, FFMPEG_VERSION);
 // Where the extracted Firefox binary lives on Windows
 const FIREFOX_WIN_EXTRACT_DIR = path.join(ASSET_CACHE_DIR, 'firefox', 'win64-' + FIREFOX_BUILD_ID);
 
+const START_SERVER = process.env.START_SERVER !== "false";
+
 const env = {
   ...process.env,
-  APP_RESOURCES_DIR: process.env.APP_RESOURCES_DIR === undefined ? './lib/' : process.env.APP_RESOURCES_DIR,
+  ...(START_SERVER && {
+    APP_RESOURCES_DIR: process.env.APP_RESOURCES_DIR ?? "./lib/",
+  }),
 };
 
 function findFreePort(start = 19119, end = 65535) {
@@ -976,8 +980,11 @@ app.whenReady().then(() => {
     }
   });
   
-  startServer();
-  setTimeout(createWindow, 2000); // Wait 2 seconds for server to start (adjust as needed)
+  if (START_SERVER) {
+    startServer();
+  }
+  const DELAY = START_SERVER ? 2000 : 0; // Wait 2 seconds for server to start (adjust as needed)
+  setTimeout(createWindow, DELAY);
 });
 app.on('window-all-closed', () => {
   console.log('window-all-closed() - app quitting');
@@ -986,15 +993,17 @@ app.on('window-all-closed', () => {
   app.quit();
 });
 
-app.on('will-quit', () => {
-  console.log('will-quit() - app quitting');
-  stopServer();
-});
+if (START_SERVER) {
+  app.on('will-quit', () => {
+    console.log('will-quit() - app quitting');
+    stopServer();
+  });
 
-app.on('before-quit', () => {
-  console.log('before-quit() - app quitting');
-  stopServer();
-});
+  app.on('before-quit', () => {
+    console.log('before-quit() - app quitting');
+    stopServer();
+  });
+}
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {
