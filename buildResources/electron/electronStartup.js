@@ -706,10 +706,12 @@ async function waitForServerReady(port, opts = {}) {
     await delay(Math.min(intervalMs, remaining));
   }
 
-  throw new Error(
-    `Server did not become ready within ${overallTimeoutMs} ms` +
-    (lastError ? ` (last error: ${lastError.message})` : '')
-  );
+    const e = new Error(
+      `Server did not become ready within ${overallTimeoutMs} ms` +
+      (lastError ? ` (last error: ${lastError.message})` : '')
+    );
+    e.code = 'STARTUP_TIMEOUT';   // <-- tag used to write a friendlier production message
+    throw e;
 }
 
 function startServer() {
@@ -848,37 +850,29 @@ async function attemptStartup(port) {
 }
 
 function humanizeStartupError(err, port) {
-  // Log the raw thing for us; show the friendly thing to the user.
   console.error('[startup] backend failed to become ready:', err);
 
-  const name = err && err.name;
   const msg = (err && err.message) || String(err);
 
-  // Our own deadline timeout (from waitForServerReady).
-  if (name === 'TimeoutError' || /timed out|deadline|not ready/i.test(msg)) {
+  if (err && err.code === 'STARTUP_TIMEOUT') {
     return `The app couldn't reach the backend on port ${port} in time. ` +
            `It may still be starting up, or something is blocking it.`;
   }
-
-  // Port already taken / bind failure surfaced from spawn.
   if (/EADDRINUSE/i.test(msg)) {
-    return `Port ${port} is already in use by another program, ` +
-           `so the backend couldn't start.`;
+    return `Port ${port} is already in use by another program, so the backend couldn't start.`;
   }
-
-  // Couldn't even launch the server process.
   if (/ENOENT/i.test(msg)) {
     return `The backend program couldn't be found or launched.`;
   }
-
-  // Connection refused during polling.
   if (/ECONNREFUSED/i.test(msg)) {
-    return `The backend didn't respond on port ${port}. ` +
-           `It may have stopped or failed to start.`;
+    return `The backend didn't respond on port ${port}. It may have stopped or failed to start.`;
   }
+  return `The backend couldn't be started.`;
+}
 
-  // Fallback: still readable, no stack trace.
-  return `The backend couldn't be started (${msg}).`;
+function rawErrorText(err) {
+  if (!err) return String(err);
+  return err.stack || `${err.name || 'Error'}: ${err.message || String(err)}`;
 }
 
 function showStartupFailure(err, port) {
@@ -891,7 +885,10 @@ function showStartupFailure(err, port) {
       buttons: ['Retry', 'Quit'],
       defaultId: 0,
       message: 'Waiting for the server.',
-      detail: `${friendly}\n\nStart it, then click Retry.`,
+      detail:
+        `${friendly}\n\n` +
+        `Start it, then click Retry.\n\n` +
+        `— Developer details —\n${rawErrorText(err)}`,
     });
     if (choice === 0) {
       attemptStartup(port)
