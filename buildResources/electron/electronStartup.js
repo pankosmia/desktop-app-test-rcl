@@ -772,7 +772,6 @@ function installAudioCaptureHandlers(ses) {
 }
 
 function createWindow() {
-    // console.log('createWindow() - after delay');
     const win = new BrowserWindow({
         width: 1024,
         height: 768,
@@ -842,44 +841,76 @@ function createWindow() {
 }
 
 async function attemptStartup(port) {
-  if (START_SERVER) startServer();   // (re)spawn only in server-managed mode
-  // TODO: prod Retry must stopServer() before respawning — see deferred stopServer()/taskkill work
-  await waitForServerReady(port, {
-    overallTimeoutMs: 20000,
-    perRequestTimeoutMs: 2000,
-    intervalMs: 300,
-  });
+  if (START_SERVER) {
+    startServer();
+  }
+  await waitForServerReady(port);
+}
+
+function humanizeStartupError(err, port) {
+  // Log the raw thing for us; show the friendly thing to the user.
+  console.error('[startup] backend failed to become ready:', err);
+
+  const name = err && err.name;
+  const msg = (err && err.message) || String(err);
+
+  // Our own deadline timeout (from waitForServerReady).
+  if (name === 'TimeoutError' || /timed out|deadline|not ready/i.test(msg)) {
+    return `The app couldn't reach the backend on port ${port} in time. ` +
+           `It may still be starting up, or something is blocking it.`;
+  }
+
+  // Port already taken / bind failure surfaced from spawn.
+  if (/EADDRINUSE/i.test(msg)) {
+    return `Port ${port} is already in use by another program, ` +
+           `so the backend couldn't start.`;
+  }
+
+  // Couldn't even launch the server process.
+  if (/ENOENT/i.test(msg)) {
+    return `The backend program couldn't be found or launched.`;
+  }
+
+  // Connection refused during polling.
+  if (/ECONNREFUSED/i.test(msg)) {
+    return `The backend didn't respond on port ${port}. ` +
+           `It may have stopped or failed to start.`;
+  }
+
+  // Fallback: still readable, no stack trace.
+  return `The backend couldn't be started (${msg}).`;
 }
 
 function showStartupFailure(err, port) {
-  console.error('Server readiness check failed:', err);
+  const friendly = humanizeStartupError(err, port);
 
-  const buttons = START_SERVER ? ['Quit'] : ['Retry', 'Quit'];
-  const retryIndex = START_SERVER ? -1 : 0;
-  const quitIndex = START_SERVER ? 0 : 1;
-
-  const ACT = START_SERVER
-    ? `The backend could not be started. Please quit and try again.`
-    : `Waiting for the server. Start it, then click Retry.`;
-
-  dialog.showMessageBox({
-    type: 'error',
-    title: 'Startup problem',
-    message: 'The application backend did not start.',
-    detail:
-      `We couldn't reach the backend on port ${port}.\n\n` +
-      `${err.message}\n\n` +
-      ACT,
-    buttons,
-    defaultId: START_SERVER ? quitIndex : retryIndex,
-    cancelId: quitIndex,
-  }).then((result) => {
-    if (result.response === retryIndex) {   // only reachable in dev
-      attemptStartup(port).then(createWindow).catch((e) => showStartupFailure(e, port));
+  if (!START_SERVER) {
+    // Development Environment
+    const choice = dialog.showMessageBoxSync({
+      type: 'warning',
+      buttons: ['Retry', 'Quit'],
+      defaultId: 0,
+      message: 'Waiting for the server.',
+      detail: `${friendly}\n\nStart it, then click Retry.`,
+    });
+    if (choice === 0) {
+      attemptStartup(port)
+        .then(createWindow)
+        .catch((e) => showStartupFailure(e, port));
     } else {
       app.quit();
     }
-  });
+  } else {
+    // Production Environment
+    dialog.showMessageBoxSync({
+      type: 'error',
+      buttons: ['Quit'],
+      defaultId: 0,
+      message: 'The backend could not be started.',
+      detail: `${friendly}\n\nPlease quit and try again.`,
+    });
+    app.quit();
+  }
 }
 
 app.whenReady().then(async () => {
@@ -1036,28 +1067,16 @@ app.whenReady().then(async () => {
     }
   });
 
+  const port = await getPort();
+  env.ROCKET_PORT = String(port);
+
   try {
-    const port = await getPort();
-    env.ROCKET_PORT = String(port);
-    console.log('Using port', port);
+    await attemptStartup(port);
+    createWindow();
   } catch (err) {
-    console.error('Failed to obtain port:', err);
-    dialog.showErrorBox('Startup problem', 'Could not find a free port.');
-    app.quit();
-    return;
+    showStartupFailure(err, port);
   }
-  
-  if (START_SERVER) {
-    startServer();
-  }
-
-  const port = Number(env.ROCKET_PORT);
-
-  // initial attempt
-  attemptStartup(port)
-    .then(createWindow)
-    .catch((err) => showStartupFailure(err, port));
-});
+});  
 
 app.on('window-all-closed', () => {
   console.log('window-all-closed() - app quitting');
