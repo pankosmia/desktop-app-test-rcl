@@ -28,6 +28,10 @@ Target architecture for the installer (e.g., x64, arm64, x86)
 .PARAMETER Dev
 Specify -Dev "Y" when generating a development viewer.
 - Default is "N"
+
+.PARAMETER FullInstall
+    Specify -FullInstall $true for installing Electronite too; -FullInstall $false for updating all but Electronite (e.g., a development environment viewer update)
+    - Default is $true
 #>
 
 param(
@@ -35,7 +39,10 @@ param(
     [string]$arch,
 
     [Parameter(Mandatory=$false)]
-    [string]$Dev
+    [string]$Dev = "N",
+
+    [Parameter(Mandatory=$true)]
+    [bool]$FullInstall = $true
 )
 
 # Save the initial working directory
@@ -85,7 +92,9 @@ try {
     Set-Location -Path "..\build" -ErrorAction Stop
 
     # Create folder structure for package
-    Write-Host "Building folder structure for package..."
+    if ($FullInstall) {
+      Write-Host "Building folder structure for package..."
+    }
 
     if ($Dev -eq 'Y') {
       $pkgDir = "viewer"
@@ -94,9 +103,12 @@ try {
     }
 
     # Clean up and create project directories -- Needed for local bundles; Not required in GHA but also doesn't hurt anything.
-    Remove-Item -Path "..\$pkgDir\project" -Recurse -Force -ErrorAction SilentlyContinue
     $projectPath = "..\$pkgDir\project"
     $payloadPath = Join-Path $projectPath "payload\app"
+
+    if ($FullInstall -or $Dev -ne 'Y') {
+        Remove-Item -Path $projectPath -Recurse -Force -ErrorAction SilentlyContinue
+    }
 
     New-Item -ItemType Directory -Force -Path $payloadPath | Out-Null
 
@@ -113,36 +125,48 @@ try {
     }
 
     # Copy electron files
-    Write-Host "Copying Electron files..."
+    if ($FullInstall) {
+      Write-Host "Preparing Electron files..."
+    } else {
+      Write-Host "Preparing viewer update..."
+    }
     try {
-        # Copy all the general electron files
         $electronSrcPath = Join-Path $PSScriptRoot "..\..\buildResources\electron"
         $electronDestPath = Join-Path $payloadPath "electron"
-        $electronDestPath = Join-Path $payloadPath "electron"
 
-        Write-Host "Electron source path: $electronSrcPath" -ErrorAction SilentlyContinue
-        Write-Host "Electron destination path: $electronDestPath" -ErrorAction SilentlyContinue
-
-        # Ensure source exists
-        if (-not (Test-Path $electronSrcPath)) {
-            Write-Error "Source path not found: $electronSrcPath"
-            exit 1
+        if ($FullInstall) {
+          Write-Host "Electron source path: $electronSrcPath" -ErrorAction SilentlyContinue
+          Write-Host "Electron destination path: $electronDestPath" -ErrorAction SilentlyContinue
         }
-        
+
         # Ensure destination parent exists
         $destParent = Split-Path -Parent $electronDestPath
         if (-not (Test-Path $destParent)) {
             New-Item -ItemType Directory -Path $destParent -Force | Out-Null
         }
 
-        # Copy main electron files
-        Copy-Item -Path $electronSrcPath -Destination $electronDestPath -Recurse -Force -ErrorAction Stop
-        Write-Host "Successfully copied electron files"
+        if ($FullInstall) {
+            # Ensure source exists
+            if (-not (Test-Path $electronSrcPath)) {
+                Write-Error "Source path not found: $electronSrcPath"
+                exit 1
+            }
+
+            # Copy all the general electron files
+            Copy-Item -Path $electronSrcPath -Destination $electronDestPath -Recurse -Force -ErrorAction Stop
+            Write-Host "Successfully copied general electron files"
+        } else {
+            Write-Host "Skipping general electron file copy (not needed)."
+            if (-not (Test-Path $electronDestPath)) {
+                Write-Error "Electron destination path not found for partial install: $electronDestPath"
+                exit 1
+            }
+        }
 
         # Copy main electron browser window icon
         $electronIconSrc = Join-Path $PSScriptRoot "..\..\globalBuildResources\favicon*.png"
         Write-Host "Copying favicon*.png to $electronDestPath ..."
-        Copy-Item $electronIconSrc -Destination $electronDestPath
+        Copy-Item $electronIconSrc -Destination $electronDestPath -Force
 
         # Copy required modules and dependencies
         $nodeModulesSrc = Join-Path $PSScriptRoot "..\..\node_modules"
@@ -171,13 +195,13 @@ try {
             "ms",
             "typed-query-selector",
             "webdriver-bidi-protocol",
-            "ws"
-            "semver"
-            "proxy-agent"
-            "lru-cache"
-            "agent-base"
-            "proxy-from-env"
-            "progress"
+            "ws",
+            "semver",
+            "proxy-agent",
+            "lru-cache",
+            "agent-base",
+            "proxy-from-env",
+            "progress",
             "mitt"
         )
 
@@ -188,24 +212,28 @@ try {
         }
 
         Write-Host "Successfully copied node_modules dependencies"
-        
-        # Replace all occurrences of ${APP_NAME} and ${APP_VERSION} in startup script
-        (Get-Content $electronDestPath\electronStartup.js).Replace('${APP_NAME}', $env:APP_NAME) | Set-Content $electronDestPath\electronStartup.js
-        (Get-Content "$electronDestPath\package.json").Replace('${APP_NAME}', $env:APP_NAME).Replace('${APP_VERSION}', $env:APP_VERSION) | Set-Content "$electronDestPath\package.json"
-        
-        # Copy architecture-specific files
-        $archElectronPath = Join-Path $PSScriptRoot "..\$pkgDir\electron.$arch"
-        Write-Host "Electron arch path: $archElectronPath" -ErrorAction SilentlyContinue
 
-        if (Test-Path $archElectronPath) {
-            Copy-Item -Path "$archElectronPath\*" -Destination $electronDestPath -Recurse -Force -ErrorAction Stop
-            Write-Host "Successfully copied architecture-specific files"
+        # Replace all occurrences of ${APP_NAME} and ${APP_VERSION} in startup script
+        (Get-Content "$electronDestPath\electronStartup.js").Replace('${APP_NAME}', $env:APP_NAME) | Set-Content "$electronDestPath\electronStartup.js"
+        (Get-Content "$electronDestPath\package.json").Replace('${APP_NAME}', $env:APP_NAME).Replace('${APP_VERSION}', $env:APP_VERSION) | Set-Content "$electronDestPath\package.json"
+
+        if ($FullInstall) {
+            # Copy architecture-specific files
+            $archElectronPath = Join-Path $PSScriptRoot "..\$pkgDir\electron.$arch"
+            Write-Host "Electron arch path: $archElectronPath" -ErrorAction SilentlyContinue
+
+            if (Test-Path $archElectronPath) {
+                Copy-Item -Path "$archElectronPath\*" -Destination $electronDestPath -Recurse -Force -ErrorAction Stop
+                Write-Host "Successfully copied architecture-specific files"
+            } else {
+                Write-Warning "Architecture-specific path not found: $archElectronPath"
+            }
         } else {
-            Write-Warning "Architecture-specific path not found: $archElectronPath"
+            Write-Host "Skipping architecture-specific electron file copy (not needed)."
         }
     }
     catch {
-        Write-Error "Failed to copy electron files: $_"
+        Write-Error "Failed to prepare electron files: $_"
         exit 1
     }
 
