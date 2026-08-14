@@ -19,7 +19,6 @@
  * - Electron.js
  * - A compatible backend server binary (server.bin for macOS/Linux or server.exe for Windows)
  * - The first available port starting at 19119 will be used by the backend server
- * - For macOS/Linux: lsof command must be available for port checking
  * - Environment variable APP_NAME must be set for proper application naming
  */
 
@@ -73,18 +72,12 @@ async function getPort() {
   if (env.ROCKET_PORT && env.ROCKET_PORT.trim() !== '') {
     return Number(env.ROCKET_PORT);
   }
-  return await findFreePort(19119);
+  try {
+    return await findFreePort(19119);
+  } catch {
+    return 19119;   // matches Rocket.toml fallback
+  }
 }
-
-getPort()
-  .then(port => {
-    console.log('Using port ', port);
-    if (env.ROCKET_PORT === undefined) env.ROCKET_PORT = port;
-  })
-  .catch(err => {
-    console.error('Failed to obtain port:', err);
-    app.quit?.();
-  });
 
 let serverProcess = null;
 app.name = '${APP_NAME}';
@@ -251,17 +244,6 @@ function getBundledFfmpegExecutablePath() {
 async function isFfmpegInstalled() {
   const ffmpegPath = await getAvailableFfmpegPath();
   return !!ffmpegPath;
-}
-
-// Function to check if server is running (on port)
-function isServerRunning() {
-  try {
-    // macOS & Linux: use lsof; Windows would require a different approach
-    execSync(`lsof -i:${env.ROCKET_PORT} | grep LISTEN`, { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 // Helper to get the Firefox executable path (used by generate-pdf)
@@ -690,28 +672,66 @@ function delay(ms) {
 const MAC_SERVER_PATH = './bin/server.bin';
 const WIN_SERVER_PATH = './bin/server.exe';
 
+async function waitForServerReady(port, opts = {}) {
+  const {
+    overallTimeoutMs = 20000,
+    perRequestTimeoutMs = 2000,
+    intervalMs = 300,
+  } = opts;
+
+  const url = `http://127.0.0.1:${port}/api/version`;
+  const deadline = Date.now() + overallTimeoutMs;
+  let lastError = null;
+
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(url, {
+        signal: AbortSignal.timeout(perRequestTimeoutMs),
+        // Avoid any caching surprises during startup probing:
+        cache: 'no-store',
+      });
+
+      if (res.ok) return; // server is ready
+
+      // A response but not 2xx (e.g. 404/500 while booting) → keep trying.
+      lastError = new Error(`Unexpected status ${res.status} from ${url}`);
+    } catch (err) {
+      // ECONNREFUSED, socket reset, DNS, or per-request AbortError → keep trying.
+      lastError = err;
+    }
+
+    // Guard against sleeping when there's not enough time left 
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+    await delay(Math.min(intervalMs, remaining));
+  }
+
+    const e = new Error(
+      `Server did not become ready within ${overallTimeoutMs} ms` +
+      (lastError ? ` (last error: ${lastError.message})` : '')
+    );
+    e.code = 'STARTUP_TIMEOUT';   // <-- tag used to write a friendlier production message
+    throw e;
+}
+
 function startServer() {
-  if (!isServerRunning()) {
-    const serverPath = process.platform === 'win32' ? WIN_SERVER_PATH : MAC_SERVER_PATH;
-    const workingDir =  path.join(__dirname, '..');
+  const serverPath = process.platform === 'win32' ? WIN_SERVER_PATH : MAC_SERVER_PATH;
+  const workingDir =  path.join(__dirname, '..');
 
   console.log('resourcesDir is ' + env.APP_RESOURCES_DIR);
 
-    // console.log('startServer() - workingDir is ' + workingDir);
-    // console.log('startServer() - resourcesDir is ' + resourcesDir);
-    // console.log('startServer() - env is ', env);
-    
-    serverProcess = spawn(serverPath, [], {
-      stdio: 'ignore',
-      detached: true,
-      env: env,
-      cwd: workingDir
-    });
-    serverProcess.unref();
-    // console.log('startServer() - Server started at ' + path.join(workingDir, serverPath));
-  } else {
-    // console.log(startServer() - 'Server already running.');
-  }
+  // console.log('startServer() - workingDir is ' + workingDir);
+  // console.log('startServer() - resourcesDir is ' + resourcesDir);
+  // console.log('startServer() - env is ', env);
+  
+  serverProcess = spawn(serverPath, [], {
+    stdio: 'ignore',
+    detached: true,
+    env: env,
+    cwd: workingDir
+  });
+  serverProcess.unref();
+  // console.log('startServer() - Server started at ' + path.join(workingDir, serverPath));
 }
 
 function stopServer() {
@@ -728,7 +748,7 @@ function stopServer() {
     // Optionally: kill whatever is listening on port
     try {
       console.log('stopServer() - Trying to stop server forcefully.');
-      execSync(`lsof -t -i:${env.ROCKET_PORT} | xargs kill -9`);
+      execSync(`lsof -t -i:${env.ROCKET_PORT} | xargs kill -9`);  // but lsof does not exist in Windows
       console.log('stopServer() - Server stopped forcefully.');
     } catch {
       // ignore if nothing is running
@@ -754,79 +774,143 @@ function installAudioCaptureHandlers(ses) {
 }
 
 function createWindow() {
-    delay(500).then(() => {
-        // console.log('createWindow() - after delay');
-        const win = new BrowserWindow({
-            width: 1024,
-            height: 768,
-            minWidth: 900,
-            minHeight: 600,
-            autoHideMenuBar: false,
-            show: false,  // Don't show until ready to maximize
-            icon: path.join(__dirname, 'favicon.png'),
-            webPreferences: {
-                preload: path.join(__dirname, 'preload.js'),
-                nodeIntegration: false, //default is also false. True leads to console error.
-                contextIsolation: true, //default is also true. What is the impact of changing this to false?
-                enableRemoteModule: false, //default is also false. What is the impact of changing this to true?
-                sandbox: false, // default is also false
-              }
-        });
+    const win = new BrowserWindow({
+        width: 1024,
+        height: 768,
+        minWidth: 900,
+        minHeight: 600,
+        autoHideMenuBar: false,
+        show: false,  // Don't show until ready to maximize
+        icon: path.join(__dirname, 'favicon.png'),
+        webPreferences: {
+            preload: path.join(__dirname, 'preload.js'),
+            nodeIntegration: false, //default is also false. True leads to console error.
+            contextIsolation: true, //default is also true. What is the impact of changing this to false?
+            enableRemoteModule: false, //default is also false. What is the impact of changing this to true?
+            sandbox: false, // default is also false
+          }
+    });
 
-        installAudioCaptureHandlers(win.webContents.session);
+    installAudioCaptureHandlers(win.webContents.session);
 
-        win.once('ready-to-show', () => {
-            win.maximize();
-            win.show();
-            setTimeout(() => {
-              InitializeMenu();
-              win.show();
-              win.maximize();
-            }, 300);
-        });
+    win.once('ready-to-show', () => {
+        win.maximize();
+        win.show();
+        setTimeout(() => {
+          InitializeMenu();
+          win.show();
+          win.maximize();
+        }, 300);
+    });
 
-        // Show a dialog to the user to confirm the close
-        win.on('close', (event) => {
-            if (!canClose) {
-                event.preventDefault();
-                dialog.showMessageBox(win, {
-                    type: 'question',
-                    title: 'Unsaved changes',
-                    message: 'You have unsaved changes. Are you sure you want to close the application?',
-                    buttons: ['Yes', 'No'],
-                }).then((result) => {
-                    if (result.response === 0) {
-                        canClose = true;
-                        win.close();
-                    }
-                });
-            }
-        });
+    // Show a dialog to the user to confirm the close
+    win.on('close', (event) => {
+        if (!canClose) {
+            event.preventDefault();
+            dialog.showMessageBox(win, {
+                type: 'question',
+                title: 'Unsaved changes',
+                message: 'You have unsaved changes. Are you sure you want to close the application?',
+                buttons: ['Yes', 'No'],
+            }).then((result) => {
+                if (result.response === 0) {
+                    canClose = true;
+                    win.close();
+                }
+            });
+        }
+    });
 
-        // Show a dialog to the user switch pages
-        win.webContents.on('will-navigate', async (event, url) => {
-            if (!canClose) {
-                event.preventDefault();
-                dialog.showMessageBox(win, {
-                    title: 'Unsaved changes',
-                    type: 'question',
-                    message: 'You have unsaved changes. Are you sure you want to leave this page?',
-                    buttons: ['Yes', 'No'],
-                }).then((result) => {
-                    if (result.response === 0) {
-                        canClose = true;
-                        win.loadURL(url);
-                    }
-                });
-            }
-        });
+    // Show a dialog to the user switch pages
+    win.webContents.on('will-navigate', async (event, url) => {
+        if (!canClose) {
+            event.preventDefault();
+            dialog.showMessageBox(win, {
+                title: 'Unsaved changes',
+                type: 'question',
+                message: 'You have unsaved changes. Are you sure you want to leave this page?',
+                buttons: ['Yes', 'No'],
+            }).then((result) => {
+                if (result.response === 0) {
+                    canClose = true;
+                    win.loadURL(url);
+                }
+            });
+        }
+    });
 
-        win.loadURL(`http://127.0.0.1:${env.ROCKET_PORT}`);
-    })
-
+    win.loadURL(`http://127.0.0.1:${env.ROCKET_PORT}`);
 }
 
-app.whenReady().then(() => {
+async function attemptStartup(port) {
+  if (START_SERVER) {
+    startServer();
+  }
+  await waitForServerReady(port);
+}
+
+function humanizeStartupError(err, port) {
+  console.error('[startup] backend failed to become ready:', err);
+
+  const msg = (err && err.message) || String(err);
+
+  if (err && err.code === 'STARTUP_TIMEOUT') {
+    return `The app couldn't reach the backend on port ${port} in time. ` +
+           `It may still be starting up, or something is blocking it.`;
+  }
+  if (/EADDRINUSE/i.test(msg)) {
+    return `Port ${port} is already in use by another program, so the backend couldn't start.`;
+  }
+  if (/ENOENT/i.test(msg)) {
+    return `The backend program couldn't be found or launched.`;
+  }
+  if (/ECONNREFUSED/i.test(msg)) {
+    return `The backend didn't respond on port ${port}. It may have stopped or failed to start.`;
+  }
+  return `The backend couldn't be started.`;
+}
+
+function rawErrorText(err) {
+  if (!err) return String(err);
+  return err.stack || `${err.name || 'Error'}: ${err.message || String(err)}`;
+}
+
+function showStartupFailure(err, port) {
+  const friendly = humanizeStartupError(err, port);
+
+  if (!START_SERVER) {
+    // Development Environment
+    const choice = dialog.showMessageBoxSync({
+      type: 'warning',
+      buttons: ['Retry', 'Quit'],
+      defaultId: 0,
+      message: 'Waiting for the server.',
+      detail:
+        `${friendly}\n\n` +
+        `Start it, then click Retry.\n\n` +
+        `— Developer details —\n${rawErrorText(err)}`,
+    });
+    if (choice === 0) {
+      attemptStartup(port)
+        .then(createWindow)
+        .catch((e) => showStartupFailure(e, port));
+    } else {
+      app.quit();
+    }
+  } else {
+    // Production Environment
+    dialog.showMessageBoxSync({
+      type: 'error',
+      buttons: ['Quit'],
+      defaultId: 0,
+      message: 'The backend could not be started.',
+      detail: `${friendly}\n\nPlease quit and try again.`,
+    });
+    app.quit();
+  }
+}
+
+app.whenReady().then(async () => {
   ipcMain.on('setCanClose', handleSetCanClose);
 
   // IPC: Check if Firefox browser engine is already downloaded
@@ -979,13 +1063,18 @@ app.whenReady().then(() => {
       event.sender.send('ffmpeg-download-complete', false, err.message);
     }
   });
-  
-  if (START_SERVER) {
-    startServer();
+
+  const port = await getPort();
+  env.ROCKET_PORT = String(port);
+
+  try {
+    await attemptStartup(port);
+    createWindow();
+  } catch (err) {
+    showStartupFailure(err, port);
   }
-  const DELAY = START_SERVER ? 2000 : 0; // Wait 2 seconds for server to start (adjust as needed)
-  setTimeout(createWindow, DELAY);
-});
+});  
+
 app.on('window-all-closed', () => {
   console.log('window-all-closed() - app quitting');
   // On macOS, apps are expected to stay alive until explicitly quit

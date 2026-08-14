@@ -30,6 +30,9 @@ if ! [ -f $PIDFILE ]; then
     pidof server.bin > $PIDFILE
 fi
 
+# Tell electron not to start the server since we just started it.
+export START_SERVER="false"
+
 # Start the client
 source $SETTINGS_FILE
 $APP_DIR/viewer/electron --no-sandbox $APP_DIR/viewer
