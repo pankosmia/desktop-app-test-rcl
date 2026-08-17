@@ -158,7 +158,7 @@ try {
         } else {
             Write-Host "Skipping general electron file copy (not needed)."
             if (-not (Test-Path $electronDestPath)) {
-                Write-Error "Electron destination path not found for partial install: $electronDestPath"
+                Write-Error "Electron destination path not found for viewer update: $electronDestPath"
                 exit 1
             }
         }
