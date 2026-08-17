@@ -20,13 +20,13 @@
 #
 
 # get arguments
-devRun="no" # This is a development viewer run if $1 is -d
+devRun="no"
 
 fullInstall=false
 
 for arg in "$@"; do
     case "$arg" in
-        -d) devRun="-d" ;;
+        -d) devRun="-d" ;; # -d is a development viewer run
         -f) fullInstall=true ;;
     esac
 done
