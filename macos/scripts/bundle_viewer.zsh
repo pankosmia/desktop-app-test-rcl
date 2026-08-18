@@ -58,4 +58,4 @@ echo "Please wait patiently for the download process to complete..."
 echo "********************************************************************"
 echo
 
-../install/makeAllInstallsElectronite.sh
+../install/makeAllInstallsElectronite.sh -f
