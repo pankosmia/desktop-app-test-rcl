@@ -2,7 +2,9 @@
 
 # Run from pankosmia\[this-repo's-name]\macos\scripts directory by:  .\build_viewer.zsh
 
-ELECTRON_VER="../viewer/project/payload/APP_NAME.app/Contents/electron/version"
+source ../../app_config.env
+
+ELECTRON_VER="../viewer/project/payload/${APP_NAME}.app/Contents/electron/version"
 EXPECTED="37.1.0"
 
 # A full install will also install, or re-install, Electronite.

@@ -90,7 +90,7 @@ else
     pkgDir="temp"
 fi
 
-APP_BASE_DIR="../$pkgDir/project/payload/APP_NAME.app" # temp app foldername without spaces, will rename to actual name later
+APP_BASE_DIR="../$pkgDir/project/payload/${APP_NAME}.app" # temp app foldername without spaces, will rename to actual name later
 
 # Needed for local bundles. Not required in GHA but also doesn't hurt anything.
 if [ "$fullInstall" = true ] || [ "$devRun" != "-d" ]; then
