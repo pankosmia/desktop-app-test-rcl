@@ -30,7 +30,7 @@ if [ "$fullInstall" != true ]; then
         fullInstall=true
     fi
 else
-    echo "-f flag detected."
+    # -f flag detected.
     echo "A full viewer install will follow, including download of Electronite. Please wait patiently..."
 fi
 
