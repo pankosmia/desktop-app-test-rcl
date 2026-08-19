@@ -91,20 +91,17 @@ cp "../buildResources/find_free_port.sh" "${APP_BASE_DIR}/find_free_port.sh"
 #remove backup
 rm "${APP_BASE_DIR}/${LAUNCHER_NAME}.bak"
 
-# copy shared electron files
+# copy app-specific electron files
 ELECTRON_DEST="${APP_BASE_DIR}/electron"
 NODE_MODULES_SRC="../../node_modules"
 NODE_MODULES_DEST="${ELECTRON_DEST}/node_modules"
 
-if [ "$fullInstall" = true ]; then
-    cp -R "../../buildResources/electron" "$APP_BASE_DIR/"
-    echo "Successfully copied shared electron files"
-else
-    echo "Skipping shared electron file copy (not needed)."
-    if [ ! -d "$ELECTRON_DEST" ]; then
-        echo "Error: Electron destination path not found for viewer update: $ELECTRON_DEST"
-        exit 1
-    fi
+cp -R "../../buildResources/electron/." "$ELECTRON_DEST/"
+echo "Successfully copied app-specific electron files"
+
+if [ ! -d "$ELECTRON_DEST" ]; then
+    echo "Error: Electron destination path not found for app-specific electron files: $ELECTRON_DEST"
+    exit 1
 fi
 
 cp "../../globalBuildResources/favicon"*.png "$ELECTRON_DEST"

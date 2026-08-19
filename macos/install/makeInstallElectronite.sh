@@ -117,16 +117,13 @@ ELECTRON_DEST="${APP_BASE_DIR}/Contents/electron"
 NODE_MODULES_SRC="../../node_modules"
 NODE_MODULES_DEST="${ELECTRON_DEST}/node_modules"
 
-if [ "$fullInstall" = true ]; then
-    # copy shared electron files
-    cp -R "../../buildResources/electron" "${APP_BASE_DIR}/Contents/"
-    echo "Successfully copied shared electron files"
-else
-    echo "Skipping shared electron file copy (not needed)."
-    if [ ! -d "$ELECTRON_DEST" ]; then
-        echo "Error: Electron destination path not found for viewer update: $ELECTRON_DEST"
-        exit 1
-    fi
+# copy app-specific electron files
+cp -R "../../buildResources/electron/." "$ELECTRON_DEST/"
+echo "Successfully copied app-specific electron files"
+
+if [ ! -d "$ELECTRON_DEST" ]; then
+    echo "Error: Electron destination path not found for app-specific electron files: $ELECTRON_DEST"
+    exit 1
 fi
 
 cp "../../globalBuildResources/favicon"*.png "$ELECTRON_DEST"
