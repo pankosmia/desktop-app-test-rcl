@@ -131,7 +131,7 @@ try {
       Write-Host "Preparing viewer update..."
     }
     try {
-        $electronSrcPath = Join-Path $PSScriptRoot "..\..\buildResources\electron"
+        $electronSrcPath = Join-Path $PSScriptRoot "..\..\buildResources\electron\*"
         $electronDestPath = Join-Path $payloadPath "electron"
 
         if ($FullInstall) {
@@ -145,22 +145,18 @@ try {
             New-Item -ItemType Directory -Path $destParent -Force | Out-Null
         }
 
-        if ($FullInstall) {
-            # Ensure source exists
-            if (-not (Test-Path $electronSrcPath)) {
-                Write-Error "Source path not found: $electronSrcPath"
-                exit 1
-            }
+        # Ensure source exists
+        if (-not (Test-Path $electronSrcPath)) {
+            Write-Error "Source path not found: $electronSrcPath"
+            exit 1
+        }
 
-            # Copy all the general electron files
-            Copy-Item -Path $electronSrcPath -Destination $electronDestPath -Recurse -Force -ErrorAction Stop
-            Write-Host "Successfully copied general electron files"
-        } else {
-            Write-Host "Skipping general electron file copy (not needed)."
-            if (-not (Test-Path $electronDestPath)) {
-                Write-Error "Electron destination path not found for viewer update: $electronDestPath"
-                exit 1
-            }
+        # Copy all app-specific electron files
+        Copy-Item -Path $electronSrcPath -Destination $electronDestPath -Recurse -Force -ErrorAction Stop
+        Write-Host "Successfully copied app-specific electron files"
+        if (-not (Test-Path $electronDestPath)) {
+            Write-Error "Electron destination path not found for app-specific files: $electronDestPath"
+            exit 1
         }
 
         # Copy main electron browser window icon
