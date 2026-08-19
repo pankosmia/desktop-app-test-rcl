@@ -1,5 +1,5 @@
 const { spawn, execSync } = require('child_process');
-const { env, START_SERVER, ELECTRON_ROOT_DIR } = require('../config/paths');
+const { env, START_SERVER, APP_ROOT_DIR } = require('../config/paths');
 
 let serverProcess = null;
 
@@ -54,7 +54,7 @@ async function waitForServerReady(port, opts = {}) {
 
 function startServer() {
   const serverPath = process.platform === 'win32' ? WIN_SERVER_PATH : MAC_SERVER_PATH;
-  const workingDir = ELECTRON_ROOT_DIR;
+  const workingDir = APP_ROOT_DIR;
   console.log('resourcesDir is ' + env.APP_RESOURCES_DIR);
   // console.log('startServer() - workingDir is ' + workingDir);
   // console.log('startServer() - resourcesDir is ' + resourcesDir);

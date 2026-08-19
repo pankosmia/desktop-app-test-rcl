@@ -20,7 +20,8 @@ const env = {
   }),
 };
 
-const ELECTRON_ROOT_DIR = path.join(__dirname, '..', '..');
+const ELECTRON_ROOT_DIR = path.join(__dirname, '..'); // electron is one level up from window.js
+const APP_ROOT_DIR = path.join(__dirname, '..', '..'); // two levels up from server.js
 
 module.exports = {
   FIREFOX_VERSION,
@@ -32,5 +33,6 @@ module.exports = {
   FIREFOX_WIN_EXTRACT_DIR,
   START_SERVER,
   env,
+  APP_ROOT_DIR,
   ELECTRON_ROOT_DIR,
 };
