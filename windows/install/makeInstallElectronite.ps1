@@ -149,6 +149,11 @@ try {
             exit 1
         }
 
+        # Explicitly create electron destination directory if not found 
+        if (-not (Test-Path $electronDestPath)) {
+            New-Item -ItemType Directory -Path $electronDestPath -Force | Out-Null
+        }
+
         # Copy all app-specific electron files
         Copy-Item -Path $electronSrcPath -Destination $electronDestPath -Recurse -Force -ErrorAction Stop
         Write-Host "Successfully copied app-specific electron files"
@@ -165,6 +170,11 @@ try {
         # Copy required modules and dependencies
         $nodeModulesSrc = Join-Path $PSScriptRoot "..\..\node_modules"
         $nodeModulesDest = Join-Path $electronDestPath "node_modules"
+
+        # Explicitly create node_modules if not found
+        if (-not (Test-Path $nodeModulesDest)) {
+            New-Item -ItemType Directory -Path $nodeModulesDest -Force | Out-Null
+        }
 
         # 7zip-min (full directory) -- Windows only
         $7zipMinDest = Join-Path $nodeModulesDest "7zip-min"
