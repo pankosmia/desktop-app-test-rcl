@@ -38,10 +38,8 @@ param(
     [Parameter(Mandatory=$true)]
     [string]$arch,
 
-    [Parameter(Mandatory=$false)]
     [string]$Dev = "N",
 
-    [Parameter(Mandatory=$true)]
     [bool]$FullInstall = $true
 )
 
