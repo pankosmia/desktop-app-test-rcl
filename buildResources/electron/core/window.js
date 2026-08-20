@@ -28,7 +28,7 @@ function createWindow() {
     minHeight: 600,
     autoHideMenuBar: false,
     show: false,
-    icon: path.join(ELECTRON_ROOT_DIR, /* ...existing icon path... */),
+    icon: path.join(ELECTRON_ROOT_DIR, 'favicon.png'),
     webPreferences: {
       preload: path.join(ELECTRON_ROOT_DIR, 'preload.js'),
       nodeIntegration: false,
