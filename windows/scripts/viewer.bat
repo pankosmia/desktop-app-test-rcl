@@ -5,9 +5,8 @@ REM .\build_viewer.ps1 must be run once before .\viewer.bat will work
 set "ROCKET_PORT=%~1"
 if "%ROCKET_PORT%"=="" set "ROCKET_PORT=19119"
 
-echo ========================
-echo(
-echo Starting electronite viewer, accessing the development build environment running at port shown below:
+echo Starting the Electronite viewer.
+echo Accessing the backend server at port %ROCKET_PORT%.
 
 REM Using development environment server.
 set START_SERVER=false
