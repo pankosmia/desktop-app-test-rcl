@@ -190,10 +190,10 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-      # build electronite installs
+      # build electronite installs (-f = full install)
       - name: Run makeAllInstallsElectronite.sh
         working-directory: ./macos/install
-        run: ./makeAllInstallsElectronite.sh
+        run: ./makeAllInstallsElectronite.sh -f
 
       - name: Get Electronite Installer names
         id: get-electronite-names

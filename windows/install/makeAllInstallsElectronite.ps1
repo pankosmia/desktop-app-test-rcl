@@ -14,17 +14,22 @@
     - getElectronRelease.ps1
     - makeInstallElectronite.ps1
 
+.PARAMETER Dev
+    Specify -Dev "Y" when generating a development viewer.
+    - Default is "N"
+
 .PARAMETER IsGHA
     Specify -IsGHA "N" when run locally to avoid a failed attempt to list github actions environment variables.
     - Default is "Y"
 
-.PARAMETER Dev
-    Specify -Dev "Y" when generating a development viewer.
-    - Default is "N"
+.PARAMETER FullInstall
+    Specify -FullInstall $true for installing Electronite too; -FullInstall $false for updating all but Electronite (e.g., a development environment viewer update)
+    - Default is $true
 #>
 param(
-    [string]$Dev,
-    [string]$IsGHA
+    [string]$Dev = "N",
+    [string]$IsGHA = "Y",
+    [bool]$FullInstall = $true
 )
 
 # get environment variables from app_config.env
@@ -61,10 +66,10 @@ $CPU_ARCH = if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitect
 foreach ($ARCH in @("x64", "arm64")) {
     # Skip if not running on native architecture
     if ($ARCH -ne $CPU_ARCH) {
-        Write-Host "Skipping $ARCH build on $CPU_ARCH machine"
+        Write-Host "Skipping $ARCH build on $CPU_ARCH machine (not applicable)."
         continue
     }
-    Write-Host "Building for architecture: $ARCH"
+    Write-Host "Architecture: $ARCH"
 
     # Set download URLs based on architecture
     $downloadElectronUrl = $ElectronX64
@@ -76,11 +81,16 @@ foreach ($ARCH in @("x64", "arm64")) {
     }
 
     # Get Electron release
-    Write-Host "Getting Electron release..."
-    $electronResult = & "$PSScriptRoot\getElectronRelease.ps1" -downloadUrl $downloadElectronUrl -arch $ARCH -Dev $Dev
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "Error: Failed to get Electron release files at $downloadElectronUrl"
-        exit 1
+    if ($FullInstall) {
+        # Get Electron release
+        Write-Host "Getting Electron release..."
+        $electronResult = & "$PSScriptRoot\getElectronRelease.ps1" -downloadUrl $downloadElectronUrl -arch $ARCH -Dev $Dev
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "Error: Failed to get Electron release files at $downloadElectronUrl"
+            exit 1
+        }
+    } else {
+        Write-Host "Skipping Electron download/release step (not needed)."
     }
 
     if ($Dev -ne 'Y') {
@@ -92,12 +102,14 @@ foreach ($ARCH in @("x64", "arm64")) {
     }
 
     # Run makeInstallElectronite PowerShell script
-    Write-Host "`n"
-    Write-Host "     *****************************************"
-    Write-Host "     * Running makeInstallElectronite.ps1... *"
-    Write-Host "     * Wait for the prompt.                  *"
-    Write-Host "     *****************************************"
-    Write-Host "`n"
+    if ($FullInstall) {
+        Write-Host "`n"
+        Write-Host "     *****************************************"
+        Write-Host "     * Running makeInstallElectronite.ps1... *"
+        Write-Host "     * Wait for the prompt.                  *"
+        Write-Host "     *****************************************"
+        Write-Host "`n"
+    }
     $makeInstallElectronitePath = Join-Path $PSScriptRoot "makeInstallElectronite.ps1"
     if (-not (Test-Path $makeInstallElectronitePath)) {
         Write-Host "Error: makeInstallElectronite.ps1 not found at $makeInstallElectronitePath"
@@ -105,9 +117,9 @@ foreach ($ARCH in @("x64", "arm64")) {
     }
 
     if ($Dev -eq 'Y') {
-      $result = & "$makeInstallElectronitePath" -Dev $Dev -arch $arch
+      $result = & "$makeInstallElectronitePath" -Dev $Dev -arch $arch -FullInstall $FullInstall
     } else {
-      $result = & "$makeInstallElectronitePath" -arch $arch
+      $result = & "$makeInstallElectronitePath" -arch $arch -FullInstall $FullInstall
     }
     if ($LASTEXITCODE -ne 0) {
         Write-Host "Error: makeInstallElectronite.ps1 failed with exit code $LASTEXITCODE"

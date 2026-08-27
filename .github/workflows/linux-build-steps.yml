@@ -126,11 +126,7 @@ jobs:
         working-directory: ./linux/scripts
         run: ./bundle_tgz.bsh -s -g
 
-      - name: Build Electronite viewer
-        working-directory: ./linux/scripts
-        run: ./build_viewer.bsh
-
-      - name: Create .deb installer
+      - name: Create .deb installer (includes Electronite viewer build)
         working-directory: ./linux/scripts
         run: ./bundle_viewer.bsh
 

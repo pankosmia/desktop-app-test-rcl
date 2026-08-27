@@ -9,8 +9,9 @@
 #   It downloads the required Electron and zip releases, and processes them
 #   into installable packages.
 #
-# Positional Arguments:
-#   $1 -d indicates generation of a development viewer (optional)
+# Flag-style Arguments:
+#   -d indicates generation of a development viewer (optional)
+#   -f indicates a full install including Electronite download/copy (optional)
 #   Note - All URLs and architectures are hardcoded in the script
 #
 # Return Values:
@@ -19,10 +20,18 @@
 #
 
 # get arguments
-devRun="${1:-no}" # This is a development viewer run if $1 is -d
+devRun="no"
+fullInstall=false
+
+for arg in "$@"; do
+    case "$arg" in
+        -d) devRun="-d" ;; # -d is a development viewer run
+        -f) fullInstall=true ;;
+    esac
+done
 
 # This script uses the APP_NAME environment variables as defined in app_config.env
-source ../../app_config.env
+source "../../app_config.env"
 
 EMSG="environment variable is not set in makeAllInstallsElecrtronite.sh."
 
@@ -46,11 +55,11 @@ FILE_APP_NAME=${FILE_APP_NAME// /-}
 # export environment variables -- available to any subshell; not environment variables!
 echo "FILE_APP_NAME=$FILE_APP_NAME"
 export FILE_APP_NAME="$FILE_APP_NAME"
-echo "APP_NAME=$APP_NAME" 
+echo "APP_NAME=$APP_NAME"
 export APP_NAME="$APP_NAME"
 echo "APP_VERSION=$APP_VERSION"
 export APP_VERSION="$APP_VERSION"
-echo "APP_SHORT_NAME=$APP_SHORT_NAME" 
+echo "APP_SHORT_NAME=$APP_SHORT_NAME"
 export APP_SHORT_NAME="$APP_SHORT_NAME"
 
 ElectronArm64="https://github.com/unfoldingWord/electronite/releases/download/v37.1.0-graphite/electronite-v37.1.0-graphite-darwin-arm64.zip"
@@ -74,9 +83,9 @@ for ARCH in "x64" "arm64"; do
         echo "Skipping $ARCH build on $CPU_ARCH machine"
         continue
     fi
-  
+
     echo "Building for architecture: $ARCH"
-  
+
     downloadElectronUrl="$ElectronX64"
     expectedZip="*-x64-cli.zip"
     if [ "$ARCH" = "arm64" ]; then
@@ -84,32 +93,43 @@ for ARCH in "x64" "arm64"; do
         expectedZip="*-arm64-cli.zip"
     fi
 
-    cd ../install # required on local builds runs; no harm in gha
-    ./getElectronRelease.sh $downloadElectronUrl $ARCH $devRun
+    cd ../install || exit 1 # required on local builds runs; no harm in gha
 
-    if [ $? -ne 0 ]; then
-        echo "Error: Failed to get Electron release files at downloadElectronUrl - $?"
-        exit 1
-    fi
+    if [ "$fullInstall" = true ]; then
+        ./getElectronRelease.sh "$downloadElectronUrl" "$ARCH" "$devRun"
 
-    if [[ $devRun =~ ^(-d) ]]; then
-        pkgDir=viewer
+        if [ $? -ne 0 ]; then
+            echo "Error: Failed to get Electron release files at $downloadElectronUrl"
+            exit 1
+        fi
     else
-        pkgDir=temp
+        echo "Skipping Electron download/release step (not needed)."
     fi
 
-    # Run makeInstallElectronite Shell script
-    echo
-    echo "     ****************************************"
-    echo "     * Running makeInstallElectronite.sh... *"
-    echo "     * Wait for the prompt.                 *"
-    echo "     ****************************************"
-    echo
-    ./makeInstallElectronite.sh $ARCH $devRun
+    if [ "$devRun" = "-d" ]; then
+        pkgDir="viewer"
+    else
+        pkgDir="temp"
+    fi
 
-    if ! [[ $devRun =~ ^(-d) ]]; then
+    if [ "$fullInstall" = true ]; then
+        echo
+        echo "     ****************************************"
+        echo "     * Running makeInstallElectronite.sh... *"
+        echo "     * Wait for the prompt.                 *"
+        echo "     ****************************************"
+        echo
+    fi
+
+    if [ "$fullInstall" = true ]; then
+        ./makeInstallElectronite.sh "$ARCH" "$devRun" -f
+    else
+        ./makeInstallElectronite.sh "$ARCH" "$devRun"
+    fi
+
+    if [ "$devRun" != "-d" ]; then
         echo "Files at ../../releases/macos/"
-        ls -als ../../releases/macos/
+        ls -als "../../releases/macos/"
     fi
 
     if [ $? -ne 0 ]; then
@@ -121,9 +141,8 @@ done
 echo "Build completed for $CPU_ARCH architecture"
 
 # Remove temporary electronite files from local dev viewer build.
-if [[ $devRun =~ ^(-d) ]]; then
-    rm -rf ../$pkgDir/electron
-    rm -rf ../$pkgDir/electron.*
+if [ "$devRun" = "-d" ]; then
+    rm -rf "../$pkgDir/electron"
+    rm -rf "../$pkgDir/electron.*"
     echo "Local Dev Electronite Viewer has been successfully built."
 fi
-
