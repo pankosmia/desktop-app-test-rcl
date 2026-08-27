@@ -4,14 +4,12 @@
 # ./build_viewer.zsh must be run once before ./viewer.zsh will work
 
 export ROCKET_PORT=${1:-19119}
-echo "$ROCKET_PORT"
 
 # This gets APP_NAME, needed on the last line.
 source ../../app_config.env
 
-echo "========================"
-echo "Starting up:"
-echo "Starting electronite viewer, accessing the development build environment running at port shown below:"
+echo "Starting the Electronite viewer."
+echo "Accessing the backend server at port ${ROCKET_PORT}."
 
 # Using development environment server.
 export START_SERVER="false"

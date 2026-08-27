@@ -6,6 +6,9 @@ set -u
 source ../../app_config.env
 echo "Building Debian package for $APP_NAME $APP_VERSION"
 
+# Full viewer install, ensuring no stale files are included.
+./build_viewer.bsh -f
+
 # Set variables
 cd ../../
 REPOPATH=$(pwd)

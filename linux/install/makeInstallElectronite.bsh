@@ -11,19 +11,18 @@
 #   1. Creating the installation directory structure
 #   2. Copying application files and resources
 #   3. Setting up proper permissions
-#   4. Configuring application metadata (Info.plist)
+#   4. Configuring application metadata
 #   5. Building the final installer package
 #
 # Requirements:
-#   - APP_VERSION environment variable must be set (e.g., export APP_VERSION="0.2.7")
-#   - Architecture parameter must be provided when running the script (arm64 or x64)
-#   - XCode command line tools must be installed
-#   - brew package manager with shc installed (`brew install shc`)
+#   - APP_VERSION environment variable must be set
+#   - Architecture parameter must be provided when running the script
 #
 # Parameters:
 #   $1 : Architecture type (Required)
 #        Accepted values: arm64, x64
 #   $2 : -d indicates a development run (for building viewer only)
+#   $3 : -f indicates full install including Electronite copy/download setup
 #
 # Returns:
 #   0 : Success
@@ -33,76 +32,80 @@
 #   Creates installer package at: ../releases/linux/<app-name>_installer_<arch>_<version>.pkg
 
 EMSG="environment variable is not set in makeInstallElectronite.bsh."
-# Check if APP_NAME environment variable is set
 if [ -z "$APP_NAME" ]; then
     echo "Error: APP_NAME $EMSG"
     exit 1
 fi
 
-# Check if APP_VERSION environment variable is set
 if [ -z "$APP_VERSION" ]; then
     echo "Error: APP_VERSION $EMSG"
     exit 1
 fi
 
-# Check if FILE_APP_NAME environment variable is set
 if [ -z "$FILE_APP_NAME" ]; then
     echo "Error: FILE_APP_NAME $EMSG"
     exit 1
 fi
-
 # get arguments
 arch="$1"
 devRun="${2:-no}" # This is a development viewer run if $1 is -d
+fullInstall=false
+for arg in "$@"; do
+    case "$arg" in
+        -f) fullInstall=true ;;
+    esac
+done
 
 # Needed for local bundles. Not required in GHA but does no harm.
 if ! [[ $devRun =~ ^(-d) ]]; then
-  rm -f ../releases/linux/${FILE_APP_NAME}-*-linux-${arch}.deb
+    rm -f "../releases/linux/${FILE_APP_NAME}-*-linux-${arch}.deb"
 fi
 
 cd ../build || exit 1
 
-########################################
-# build folder structure for package
-
-# Turn on command echo
-# set -x
-
 if [[ $devRun =~ ^(-d) ]]; then
-        pkgDir=viewer
-    else
-        pkgDir=temp
-    fi
-
-# Needed for local bundles. Not required in GHA but also doesn't hurt anything.
-rm -rf ../$pkgDir/project
+    pkgDir="viewer"
+else
+    pkgDir="temp"
+fi
 
 APP_BASE_DIR="../$pkgDir/project/payload/app"
 
-mkdir -p ${APP_BASE_DIR}
+if [ "$fullInstall" = true ] || ! [[ $devRun =~ ^(-d) ]]; then
+    # Needed for local bundles. Not required in GHA but also doesn't hurt anything.
+    rm -rf "../$pkgDir/project"
+fi
 
-# Rocket config
-cp ../../Rocket.toml ${APP_BASE_DIR}/Rocket.toml
+mkdir -p "$APP_BASE_DIR"
+
+cp "../../Rocket.toml" "${APP_BASE_DIR}/Rocket.toml"
 
 # electron startup
 LAUNCHER_NAME="start-${FILE_APP_NAME}.sh"
-cp ../buildResources/appLauncherElectron.sh ${APP_BASE_DIR}/${LAUNCHER_NAME}
-sed -i.bak "s/\${APP_NAME}/$APP_NAME/g" ${APP_BASE_DIR}/${LAUNCHER_NAME}
+cp "../buildResources/appLauncherElectron.sh" "${APP_BASE_DIR}/${LAUNCHER_NAME}"
+sed -i.bak "s/\${APP_NAME}/$APP_NAME/g" "${APP_BASE_DIR}/${LAUNCHER_NAME}"
 
 # find_free_port.sh, used by electron startup
-cp ../buildResources/find_free_port.sh ${APP_BASE_DIR}/find_free_port.sh
+cp "../buildResources/find_free_port.sh" "${APP_BASE_DIR}/find_free_port.sh"
 
 #remove backup
 rm "${APP_BASE_DIR}/${LAUNCHER_NAME}.bak"
 
-# copy shared electron files
-cp -R ../../buildResources/electron ${APP_BASE_DIR}/
-cp ../../globalBuildResources/favicon*.png ${APP_BASE_DIR}/electron
-echo "Successfully copied electron files"
-
-# Copy required node_modules and dependencies -- all OSes
+# copy app-specific electron files
+ELECTRON_DEST="${APP_BASE_DIR}/electron"
 NODE_MODULES_SRC="../../node_modules"
-NODE_MODULES_DEST="${APP_BASE_DIR}/electron/node_modules"
+NODE_MODULES_DEST="${ELECTRON_DEST}/node_modules"
+
+cp -R "../../buildResources/electron/." "$ELECTRON_DEST/"
+echo "Successfully copied app-specific electron files"
+
+if [ ! -d "$ELECTRON_DEST" ]; then
+    echo "Error: Electron destination path not found for app-specific electron files: $ELECTRON_DEST"
+    exit 1
+fi
+
+cp "../../globalBuildResources/favicon"*.png "$ELECTRON_DEST"
+echo "Copied favicon files"
 
 ALL_OS_MODULES=(
     "puppeteer-core"
@@ -150,15 +153,20 @@ done
 echo "Successfully copied node_modules dependencies"
 
 # Replace all occurrences of ${APP_NAME} and ${APP_VERSION} in startup script
-sed -i.bak "s/\${APP_NAME}/$APP_NAME/g" "${APP_BASE_DIR}/electron/electronStartup.js"  # Replace all occurrences of ${APP_NAME}
-sed -i.bak "s/\${APP_NAME}/$APP_NAME/g" "${APP_BASE_DIR}/electron/package.json"  # Replace all occurrences of ${APP_NAME}
-sed -i.bak "s/\${APP_VERSION}/$APP_VERSION/g" "${APP_BASE_DIR}/electron/package.json"  # Replace all occurrences of ${APP_VERSION}
+sed -i.bak "s/\${APP_NAME}/$APP_NAME/g" "${ELECTRON_DEST}/electronStartup.js"
+sed -i.bak "s/\${APP_NAME}/$APP_NAME/g" "${ELECTRON_DEST}/package.json"
+sed -i.bak "s/\${APP_VERSION}/$APP_VERSION/g" "${ELECTRON_DEST}/package.json"
 
-# now copy architecture specific electron files
-cp -R ../$pkgDir/electron.$arch/* ${APP_BASE_DIR}/electron
+if [ "$fullInstall" = true ]; then
+    # now copy architecture specific electron files
+    cp -R "../$pkgDir/electron.$arch/"* "${ELECTRON_DEST}/"
+    echo "Successfully copied architecture-specific electron files"
+else
+    echo "Skipping architecture-specific electron file copy (not needed)."
+fi
 
 # Check if Electron executable owner is current user
-ELECTRON_OWNER=$(stat --format='%u' ${APP_BASE_DIR}/electron)
+ELECTRON_OWNER=$(stat --format='%u' "$ELECTRON_DEST")
 CURRENT_USER=$(id -u)
 if [ "$ELECTRON_OWNER" != "$CURRENT_USER" ]; then
     echo "Error: Electron executable owner is not current user. Please run: sudo chown -R $(id -u):$(id -g) ../buildResources/electron.$arch/*"
@@ -166,17 +174,16 @@ if [ "$ELECTRON_OWNER" != "$CURRENT_USER" ]; then
 fi
 
 if ! [[ $devRun =~ ^(-d) ]]; then
-  chmod 755 ${APP_BASE_DIR}/linux
-  cp -R ./bin ${APP_BASE_DIR}/
-  echo "copied bin to $APP_BASE_DIR/"
-  chmod 755 ${APP_BASE_DIR}/bin/server.bin
-  chmod 755 ${APP_BASE_DIR}/${LAUNCHER_NAME}
-  chmod 755 ${APP_BASE_DIR}/find_free_port.sh
+    chmod 755 "${APP_BASE_DIR}/linux"
+    cp -R "./bin" "${APP_BASE_DIR}/"
+    echo "copied bin to $APP_BASE_DIR/"
+    chmod 755 "${APP_BASE_DIR}/bin/server.bin"
+    chmod 755 "${APP_BASE_DIR}/${LAUNCHER_NAME}"
+    chmod 755 "${APP_BASE_DIR}/find_free_port.sh"
 
-  cp -R ./lib ${APP_BASE_DIR}/
-  echo "copied lib to $APP_BASE_DIR/"
+    cp -R "./lib" "${APP_BASE_DIR}/"
+    echo "copied lib to $APP_BASE_DIR/"
 fi
 
 # set execute permission on all folders
-find ${APP_BASE_DIR}/ -type d -exec chmod u+x,g+x,o+x {} +
-
+find "${APP_BASE_DIR}/" -type d -exec chmod u+x,g+x,o+x {} +

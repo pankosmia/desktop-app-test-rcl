@@ -24,6 +24,7 @@
 #   $1 : Architecture type (Required)
 #        Accepted values: arm64, x64
 #   $2 : -d indicates a development run (for building viewer only)
+#   $3 : -f indicates full install including Electronite copy/download setup
 #
 # Returns:
 #   0 : Success
@@ -61,11 +62,18 @@ fi
 # get arguments
 arch="$1"
 devRun="${2:-no}" # This is a development viewer run if $1 is -d
+fullInstall=false
+
+for arg in "$@"; do
+    case "$arg" in
+        -f) fullInstall=true ;;
+    esac
+done
 
 # Needed for local bundles. Not required in GHA but does no harm.
-if ! [[ $devRun =~ ^(-d) ]]; then
+if [ "$devRun" != "-d" ]; then
   PKG_NAME="${FILE_APP_NAME}-${APP_VERSION}-macos-${arch}.pkg"
-  rm -f ../releases/macos/${FILE_APP_NAME}-*-macos-${arch}.pkg
+  rm -f "../releases/macos/${FILE_APP_NAME}-*-macos-${arch}.pkg"
 fi
 
 cd ../build || exit 1
@@ -76,62 +84,72 @@ cd ../build || exit 1
 # Turn on command echo
 # set -x
 
-if [[ $devRun =~ ^(-d) ]]; then
-        pkgDir=viewer
-    else
-        pkgDir=temp
-    fi
+if [ "$devRun" = "-d" ]; then
+    pkgDir="viewer"
+else
+    pkgDir="temp"
+fi
+
+APP_BASE_DIR="../$pkgDir/project/payload/${APP_NAME}.app" # temp app foldername without spaces, will rename to actual name later
 
 # Needed for local bundles. Not required in GHA but also doesn't hurt anything.
-rm -rf ../$pkgDir/project
+if [ "$fullInstall" = true ] || [ "$devRun" != "-d" ]; then
+    rm -rf "../$pkgDir/project"
+fi
 
-APP_BASE_DIR="../$pkgDir/project/payload/APP_NAME.app" # temp app foldername without spaces, will rename to actual name later
-
-mkdir -p ${APP_BASE_DIR}/Contents/MacOS
+mkdir -p "${APP_BASE_DIR}/Contents/MacOS"
 
 # Rocket config
-cp ../../Rocket.toml ${APP_BASE_DIR}/Rocket.toml
+cp "../../Rocket.toml" "${APP_BASE_DIR}/Rocket.toml"
 
 # electron startup
 LAUNCHER_NAME="start-${FILE_APP_NAME}.sh"
-cp ../buildResources/appLauncherElectron.sh ${APP_BASE_DIR}/Contents/MacOS/${LAUNCHER_NAME}
-sed -i.bak "s/\${APP_NAME}/$APP_NAME/g" ${APP_BASE_DIR}/Contents/MacOS/${LAUNCHER_NAME}
+cp "../buildResources/appLauncherElectron.sh" "${APP_BASE_DIR}/Contents/MacOS/${LAUNCHER_NAME}"
+sed -i.bak "s/\${APP_NAME}/$APP_NAME/g" "${APP_BASE_DIR}/Contents/MacOS/${LAUNCHER_NAME}"
 
 # find_free_port.sh, used by electron startup
-cp ../buildResources/find_free_port.sh ${APP_BASE_DIR}/Contents/MacOS/find_free_port.sh
+cp "../buildResources/find_free_port.sh" "${APP_BASE_DIR}/Contents/MacOS/find_free_port.sh"
 
 #remove backup
 rm "${APP_BASE_DIR}/Contents/MacOS/${LAUNCHER_NAME}.bak"
 
-# copy shared electron files
-cp -R ../../buildResources/electron ${APP_BASE_DIR}/Contents/
-cp ../../globalBuildResources/favicon*.png ${APP_BASE_DIR}/Contents/electron
-echo "Successfully copied electron files"
+ELECTRON_DEST="${APP_BASE_DIR}/Contents/electron"
+NODE_MODULES_SRC="../../node_modules"
+NODE_MODULES_DEST="${ELECTRON_DEST}/node_modules"
+
+# copy app-specific electron files
+cp -R "../../buildResources/electron/." "$ELECTRON_DEST/"
+echo "Successfully copied app-specific electron files"
+
+if [ ! -d "$ELECTRON_DEST" ]; then
+    echo "Error: Electron destination path not found for app-specific electron files: $ELECTRON_DEST"
+    exit 1
+fi
+
+cp "../../globalBuildResources/favicon"*.png "$ELECTRON_DEST"
+echo "Copied favicon files"
 
 # Copy required node_modules and dependencies -- all OSes
-NODE_MODULES_SRC="../../node_modules"
-NODE_MODULES_DEST="${APP_BASE_DIR}/Contents/electron/node_modules"
+ALL_OS_MODULES="
+puppeteer-core
+@puppeteer/browsers
+chromium-bidi
+debug
+devtools-protocol
+ms
+typed-query-selector
+webdriver-bidi-protocol
+ws
+semver
+proxy-agent
+lru-cache
+agent-base
+proxy-from-env
+progress
+mitt
+"
 
-ALL_OS_MODULES=(
-    "puppeteer-core"
-    "@puppeteer/browsers"
-    "chromium-bidi"
-    "debug"
-    "devtools-protocol"
-    "ms"
-    "typed-query-selector"
-    "webdriver-bidi-protocol"
-    "ws"
-    "semver"
-    "proxy-agent"
-    "lru-cache"
-    "agent-base"
-    "proxy-from-env"
-    "progress"
-    "mitt"
-)
-
-for mod in "${ALL_OS_MODULES[@]}"; do
+for mod in $ALL_OS_MODULES; do
     mkdir -p "${NODE_MODULES_DEST}/${mod}"
     cp -R "${NODE_MODULES_SRC}/${mod}/." "${NODE_MODULES_DEST}/${mod}/"
 done
@@ -139,25 +157,29 @@ done
 echo "Successfully copied node_modules dependencies"
 
 # Replace all occurrences of ${APP_NAME} and ${APP_VERSION} in startup script
-sed -i.bak "s/\${APP_NAME}/$APP_NAME/g" "${APP_BASE_DIR}/Contents/electron/electronStartup.js"  # Replace all occurrences of ${APP_NAME}
-sed -i.bak "s/\${APP_NAME}/$APP_NAME/g" "${APP_BASE_DIR}/Contents/electron/package.json"  # Replace all occurrences of ${APP_NAME}
-sed -i.bak "s/\${APP_VERSION}/$APP_VERSION/g" "${APP_BASE_DIR}/Contents/electron/package.json"  # Replace all occurrences of ${APP_VERSION}
+sed -i.bak "s/\${APP_NAME}/$APP_NAME/g" "${ELECTRON_DEST}/electronStartup.js"  # Replace all occurrences of ${APP_NAME}
+sed -i.bak "s/\${APP_NAME}/$APP_NAME/g" "${ELECTRON_DEST}/package.json"  # Replace all occurrences of ${APP_NAME}
+sed -i.bak "s/\${APP_VERSION}/$APP_VERSION/g" "${ELECTRON_DEST}/package.json"  # Replace all occurrences of ${APP_VERSION}
 
 # now copy architecture specific electron files
-cp -R ../$pkgDir/electron.$arch/* ${APP_BASE_DIR}/Contents/electron
+if [ "$fullInstall" = true ]; then
+    cp -R "../$pkgDir/electron.$arch/"* "$ELECTRON_DEST"
+else
+    echo "Skipping architecture-specific electron file copy (not needed)."
+fi
 
 # Check if Electron executable owner is current user
-ELECTRON_OWNER=$(stat -f %u ${APP_BASE_DIR}/Contents/electron/Electron.app/Contents/MacOS/Electron)
+ELECTRON_OWNER=$(stat -f %u "${APP_BASE_DIR}/Contents/electron/Electron.app/Contents/MacOS/Electron")
 CURRENT_USER=$(id -u)
 if [ "$ELECTRON_OWNER" != "$CURRENT_USER" ]; then
     echo "Error: Electron executable owner is not current user. Please run: sudo chown -R $(id -u):$(id -g) ../buildResources/electron.$arch/*"
     exit 1
 fi
 
-# rename Electron.app folder 
-mv ${APP_BASE_DIR}/Contents/electron/Electron.app ${APP_BASE_DIR}/Contents/electron/Electron
+# rename Electron.app folder
+mv "${APP_BASE_DIR}/Contents/electron/Electron.app" "${APP_BASE_DIR}/Contents/electron/Electron"
 
-chmod 755 ${APP_BASE_DIR}/Contents/electron/Electron/Contents/MacOS/Electron
+chmod 755 "${APP_BASE_DIR}/Contents/electron/Electron/Contents/MacOS/Electron"
 
 # update Info.plist file in Electron folder - insert app name
 echo "Updating Electron Info.plist file"
@@ -168,12 +190,12 @@ sed -i.bak "/CFBundleName/{n;s/Electron/$APP_NAME/g;}" "$PLIST_FILE_ELECTRON"
 cat "$PLIST_FILE_ELECTRON"
 echo "Done Updating Electron Info.plist file"
 
-if ! [[ $devRun =~ ^(-d) ]]; then
-  mkdir -p ${APP_BASE_DIR}/Contents/Resources
-  cp ../../globalBuildResources/icon.icns ${APP_BASE_DIR}/Contents/Resources/icon.icns
+if [ "$devRun" != "-d" ]; then
+  mkdir -p "${APP_BASE_DIR}/Contents/Resources"
+  cp "../../globalBuildResources/icon.icns" "${APP_BASE_DIR}/Contents/Resources/icon.icns"
 
   # copy Info.plist
-  cp ../buildResources/Info.plist ${APP_BASE_DIR}/Contents/
+  cp "../buildResources/Info.plist" "${APP_BASE_DIR}/Contents/"
   PLIST_FILE="${APP_BASE_DIR}/Contents/Info.plist"
 
   # Check if the file exists
@@ -198,39 +220,39 @@ if ! [[ $devRun =~ ^(-d) ]]; then
   echo "New  plist file:"
   cat "$PLIST_FILE"
 
-  cp -R ./bin ${APP_BASE_DIR}/Contents/
+  cp -R "./bin" "${APP_BASE_DIR}/Contents/"
   echo "copied bin to $APP_BASE_DIR/Contents/"
-  chmod 755 ${APP_BASE_DIR}/Contents/bin/server.bin
-  chmod 755 ${APP_BASE_DIR}/Contents/MacOS/${LAUNCHER_NAME}
-  chmod 755 ${APP_BASE_DIR}/Contents/MacOS/find_free_port.sh
+  chmod 755 "${APP_BASE_DIR}/Contents/bin/server.bin"
+  chmod 755 "${APP_BASE_DIR}/Contents/MacOS/${LAUNCHER_NAME}"
+  chmod 755 "${APP_BASE_DIR}/Contents/MacOS/find_free_port.sh"
 
-  cp -R ./lib ${APP_BASE_DIR}/Contents/
+  cp -R "./lib" "${APP_BASE_DIR}/Contents/"
   echo "copied lib to $APP_BASE_DIR/Contents/"
 
   SCRIPTS_DIR="../$pkgDir/project/scripts"
-  mkdir -p $SCRIPTS_DIR
+  mkdir -p "$SCRIPTS_DIR"
   PREINST_FILE="../$pkgDir/project/scripts/preinstall"
-  cp ../buildResources/preinstall "$PREINST_FILE"
+  cp "../buildResources/preinstall" "$PREINST_FILE"
   echo "copied preinstall to $SCRIPTS_DIR"
   sed -i.bak "s/{APP_SHORT_NAME}/$APP_SHORT_NAME/g" "$PREINST_FILE"
   echo "Replaced {APP_SHORT_NAME} with \"$APP_SHORT_NAME\" in $PREINST_FILE."
   chmod +x "$PREINST_FILE"
   POSTINST_FILE="../$pkgDir/project/scripts/postinstall"
-  cp ../build/post_install_script.sh $POSTINST_FILE
+  cp "../build/post_install_script.sh" "$POSTINST_FILE"
   echo "copied post_install_script.sh to $SCRIPTS_DIR"
   echo "Variables in post_install_script.sh were already replaced by: node build.js"
-  chmod +x $POSTINST_FILE
+  chmod +x "$POSTINST_FILE"
 fi
 
 # set execute permission on all folders
-find ${APP_BASE_DIR}/ -type d -exec chmod u+x,g+x,o+x {} +
+find "${APP_BASE_DIR}/" -type d -exec chmod u+x,g+x,o+x {} +
 
 # rename to final app name
-mv ${APP_BASE_DIR} "$(dirname "${APP_BASE_DIR}")/${APP_NAME}.app"
+mv "${APP_BASE_DIR}" "$(dirname "${APP_BASE_DIR}")/${APP_NAME}.app"
 
-if ! [[ $devRun =~ ^(-d) ]]; then
+if [ "$devRun" != "-d" ]; then
   # maintain a one-off identifier for simpler upgrades of early test releases
-  if [ "$FILE_APP_NAME" == "liminal" ]; then
+  if [ "$FILE_APP_NAME" = "liminal" ]; then
     IDENTIFIER="com.yourdomain.liminal"
   else
     IDENTIFIER="pankosmia.${FILE_APP_NAME}"
@@ -239,13 +261,13 @@ if ! [[ $devRun =~ ^(-d) ]]; then
   # build pkg
   cd ..
   pkgbuild \
-    --root ./$pkgDir/project/payload \
-    --scripts ./$pkgDir/project/scripts \
-    --identifier ${IDENTIFIER} \
+    --root "./$pkgDir/project/payload" \
+    --scripts "./$pkgDir/project/scripts" \
+    --identifier "${IDENTIFIER}" \
     --version "$APP_VERSION" \
     --install-location /Applications \
-    ./build/${PKG_NAME}
+    "./build/${PKG_NAME}"
 
   # copy to releases folder
-  cp ./build/${PKG_NAME} ../releases/macos/
+  cp "./build/${PKG_NAME}" "../releases/macos/"
 fi

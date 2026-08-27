@@ -5,16 +5,20 @@
       "url": "git.door43.org/burritotruck"
     },
     {
-      "name": "unfoldingWord (SB resources)",
+        "name":"Shower ( Aquifer )",
+        "url":"git.door43.org/shower"
+    },
+    {
+      "name": "uW (SB resources)",
       "url": "git.door43.org/uw"
     },
-      {
+    {
       "name": "unfoldingWord",
       "url": "git.door43.org/unfoldingword"
     },
     {
-        "name":"Aquifer",
-        "url":"git.door43.org/shower"
+      "name": "Xenizo",
+      "url": "git.door43.org/Xenizo"
     }
   ]
 }
