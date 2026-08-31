@@ -40,50 +40,80 @@ const { registerFfmpegHandlers } = require('./features/ffmpeg');    // Can omit 
 
 app.name = '${APP_NAME}';
 
-app.whenReady().then(async () => {
-  ipcMain.on('setCanClose', handleSetCanClose);
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
-  setCreateWindow(createWindow);
-
-  registerFirefoxHandlers();
-  registerPdfHandlers();
-  registerFfmpegHandlers();
-
-  const port = await getPort();
-  env.ROCKET_PORT = String(port);
-
-  try {
-    await attemptStartup(port);
-    createWindow();
-  } catch (err) {
-    showStartupFailure(err, port);
-  }
-});
-
-app.on('window-all-closed', () => {
-  console.log('window-all-closed() - app quitting');
-  // On macOS, apps are expected to stay alive until explicitly quit
-  // but we quit anyway so server doesn't remain running
+if (!hasSingleInstanceLock) {
+  // Another instance already owns the application lock.
   app.quit();
-});
+} else {
+  // Use the existing instance.
+  app.on('second-instance', () => {
+    const windows = BrowserWindow.getAllWindows();
 
-if (START_SERVER) {
-  app.on('will-quit', () => {
-    console.log('will-quit() - app quitting');
-    stopServer();
+    if (windows.length === 0) {
+      createWindow();
+      return;
+    }
+
+    const mainWindow = windows[0];
+
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+
+    if (!mainWindow.isVisible()) {
+      mainWindow.show();
+    }
+
+    mainWindow.focus();
   });
 
-  app.on('before-quit', () => {
-    console.log('before-quit() - app quitting');
-    stopServer();
+  app.whenReady().then(async () => {
+    ipcMain.on('setCanClose', handleSetCanClose);
+
+    setCreateWindow(createWindow);
+
+    registerFirefoxHandlers();
+    registerPdfHandlers();
+    registerFfmpegHandlers();
+
+    const port = await getPort();
+    env.ROCKET_PORT = String(port);
+
+    try {
+      await attemptStartup(port);
+      createWindow();
+    } catch (err) {
+      showStartupFailure(err, port);
+    }
+  });
+
+  app.on('window-all-closed', () => {
+    console.log('window-all-closed() - app quitting');
+
+    // On macOS, apps are normally kept alive until explicitly quit.
+    // This application quits so the server does not remain running.
+    app.quit();
+  });
+
+  if (START_SERVER) {
+    app.on('will-quit', () => {
+      console.log('will-quit() - app quitting');
+      stopServer();
+    });
+
+    app.on('before-quit', () => {
+      console.log('before-quit() - app quitting');
+      stopServer();
+    });
+  }
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      console.log('activate() - app creating window since there are none');
+      createWindow();
+    } else {
+      console.log('activate() - app not creating window since there are already windows');
+    }
   });
 }
-
-app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    console.log('activate() - app creating window since there are none');
-    createWindow();
-  } else {
-    console.log('activate() - app not creating window since there are already windows');
-  }
-});
