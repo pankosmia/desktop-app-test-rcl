@@ -40,6 +40,8 @@ const { registerFfmpegHandlers } = require('./features/ffmpeg');    // Can omit 
 
 app.name = '${APP_NAME}';
 
+let shutdownStarted = false;
+
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
 if (!hasSingleInstanceLock) {
@@ -97,14 +99,44 @@ if (!hasSingleInstanceLock) {
   });
 
   if (START_SERVER) {
-    app.on('will-quit', () => {
-      console.log('will-quit() - app quitting');
-      stopServer();
-    });
+    app.on('will-quit', (event) => {
+      if (shutdownStarted) {
+        return;
+      }
 
-    app.on('before-quit', () => {
-      console.log('before-quit() - app quitting');
-      stopServer();
+      shutdownStarted = true;
+      event.preventDefault();
+
+      const maximumShutdownTimeMs = 7000;
+
+      const shutdownTimeout = new Promise((resolve) => {
+        setTimeout(() => {
+          resolve('timeout');
+        }, maximumShutdownTimeMs);
+      });
+
+      Promise.race([
+        Promise.resolve()
+          .then(() => stopServer())
+          .then(() => 'completed')
+          .catch((err) => {
+            console.error(
+              'will-quit() - Server shutdown failed:',
+              err
+            );
+            return 'failed';
+          }),
+
+        shutdownTimeout,
+      ]).then((result) => {
+        if (result === 'timeout') {
+          console.error(
+            'will-quit() - Server shutdown timed out; continuing application quit.'
+          );
+        }
+
+        app.exit(0);
+      });
     });
   }
 

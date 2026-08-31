@@ -1,6 +1,10 @@
 const { app, dialog } = require('electron');
 const { START_SERVER } = require('../config/paths');
-const { startServer, waitForServerReady } = require('./server');
+const {
+  startServer,
+  stopServer,
+  waitForServerReady,
+} = require('./server');
 
 // Injected by the orchestrator (electronStartup.js) to avoid a circular dependency with window.js.
 let createWindow = () => {
@@ -15,7 +19,16 @@ async function attemptStartup(port) {
   if (START_SERVER) {
     startServer();
   }
-  await waitForServerReady(port);
+
+  try {
+    await waitForServerReady(port);
+  } catch (err) {
+    if (START_SERVER) {
+      await stopServer();
+    }
+
+    throw err;
+  }
 }
 
 function humanizeStartupError(err, port) {
@@ -57,6 +70,7 @@ function showStartupFailure(err, port) {
         `Start it, then click Retry.\n\n` +
         `— Developer details —\n${rawErrorText(err)}`,
     });
+
     if (choice === 0) {
       attemptStartup(port)
         .then(createWindow)
@@ -73,6 +87,7 @@ function showStartupFailure(err, port) {
       message: 'The backend could not be started.',
       detail: `${friendly}\n\nPlease quit and try again.`,
     });
+
     app.quit();
   }
 }
