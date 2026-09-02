@@ -19,3 +19,9 @@ for USER_HOME in /home/*; do
         fi
     fi
 done
+
+# `{PACKAGE_NAME}.log` and a temporary `{PACKAGE_NAME}.pid` used to be stored here.
+OLD_USER_APP_DIR=~/.local/share/{PACKAGE_NAME}
+if [ -d "$OLD_USER_APP_DIR" ]; then
+    rm -rf -- "$OLD_USER_APP_DIR"
+fi

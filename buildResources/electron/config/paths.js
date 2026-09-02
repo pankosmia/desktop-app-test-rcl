@@ -9,7 +9,11 @@ const FFMPEG_VERSION = '7.1.1'; // Matching url's entered for each OS/Arch
 const FFMPEG_DIR = path.join(FFMPEG_BASE_DIR, FFMPEG_VERSION);
 
 // Where the extracted Firefox binary lives on Windows
-const FIREFOX_WIN_EXTRACT_DIR = path.join(ASSET_CACHE_DIR, 'firefox', 'win64-' + FIREFOX_BUILD_ID);
+const FIREFOX_WIN_EXTRACT_DIR = path.join(
+  ASSET_CACHE_DIR,
+  'firefox',
+  'win64-' + FIREFOX_BUILD_ID
+);
 
 const START_SERVER = process.env.START_SERVER !== "false";
 
@@ -23,6 +27,14 @@ const env = {
 const ELECTRON_ROOT_DIR = path.join(__dirname, '..'); // electron is one level up from window.js
 const APP_ROOT_DIR = path.join(__dirname, '..', '..'); // two levels up from server.js
 
+const UNIX_SERVER_PATH = path.join(APP_ROOT_DIR, 'bin', 'server.bin');
+const WIN_SERVER_PATH = path.join(APP_ROOT_DIR, 'bin', 'server.exe');
+
+const SERVER_EXECUTABLE_PATH =
+  process.platform === 'win32'
+    ? WIN_SERVER_PATH
+    : UNIX_SERVER_PATH;
+
 module.exports = {
   FIREFOX_VERSION,
   FIREFOX_BUILD_ID,
@@ -35,4 +47,7 @@ module.exports = {
   env,
   APP_ROOT_DIR,
   ELECTRON_ROOT_DIR,
+  UNIX_SERVER_PATH,
+  WIN_SERVER_PATH,
+  SERVER_EXECUTABLE_PATH,
 };
