@@ -82,15 +82,50 @@ jobs:
         uses: moonrepo/setup-rust@v1
         timeout-minutes: 45  # Adjust the value as needed
 
-      # Homebrew for OpenSSL for OPENSSL_STATIC=yes with cargo (rust)
+      # ARM: Homebrew for OpenSSL for OPENSSL_STATIC=yes with cargo (rust)
       - name: Set up Homebrew
         id: set-up-homebrew
+        if: ${{ inputs.runner == 'macos-14' }}
         uses: Homebrew/actions/setup-homebrew@main
 
-      # OpenSSL for build environment
-      - name: Set up OpenSSL
-        id: set-up-openssl
+      # ARM: OpenSSL for build environment
+      - name: Set up OpenSSL with Homebrew
+        id: set-up-openssl-arm
+        if: ${{ inputs.runner == 'macos-14' }}
         run: brew install openssl
+
+      # Intel: MacPorts for OpenSSL for OPENSSL_STATIC=yes with cargo (rust)
+      - name: Set up MacPorts
+        id: set-up-macports
+        if: ${{ inputs.runner == 'macos-15-intel' }}
+        uses: melusina-org/setup-macports@v1
+        with:
+          cache: enable
+
+      # Intel: OpenSSL for build environment
+      - name: Set up OpenSSL with MacPorts
+        id: set-up-openssl-x64
+        if: ${{ inputs.runner == 'macos-15-intel' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          sudo port install openssl3
+
+          prefix="/opt/local/libexec/openssl3"
+
+          test -x "$prefix/bin/openssl"
+          test -f "$prefix/lib/libssl.a"
+          test -f "$prefix/lib/libcrypto.a"
+
+          echo "OPENSSL_DIR=$prefix" >> "$GITHUB_ENV"
+          echo "OPENSSL_ROOT_DIR=$prefix" >> "$GITHUB_ENV"
+          echo "OPENSSL_STATIC=1" >> "$GITHUB_ENV"
+          echo "PKG_CONFIG_PATH=$prefix/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" >> "$GITHUB_ENV"
+          echo "LDFLAGS=-L$prefix/lib${LDFLAGS:+ $LDFLAGS}" >> "$GITHUB_ENV"
+          echo "CPPFLAGS=-I$prefix/include${CPPFLAGS:+ $CPPFLAGS}" >> "$GITHUB_ENV"
+
+          "$prefix/bin/openssl" version
 
       # Checkout the repository
       - name: Checkout repository

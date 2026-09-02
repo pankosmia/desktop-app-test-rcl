@@ -1,10 +1,15 @@
-const { spawn, execSync } = require('child_process');
-const { env, START_SERVER, APP_ROOT_DIR } = require('../config/paths');
+const { spawn, execFile } = require('child_process');
+
+const {
+  env,
+  START_SERVER,
+  APP_ROOT_DIR,
+  SERVER_EXECUTABLE_PATH,
+} = require('../config/paths');
 
 let serverProcess = null;
-
-const MAC_SERVER_PATH = './bin/server.bin';
-const WIN_SERVER_PATH = './bin/server.exe';
+let serverExitPromise = null;
+let stopPromise = null;
 
 function delay(ms) {
   return new Promise((resolve) =>
@@ -53,42 +58,148 @@ async function waitForServerReady(port, opts = {}) {
 }
 
 function startServer() {
-  const serverPath = process.platform === 'win32' ? WIN_SERVER_PATH : MAC_SERVER_PATH;
-  const workingDir = APP_ROOT_DIR;
-  console.log('resourcesDir is ' + env.APP_RESOURCES_DIR);
-  // console.log('startServer() - workingDir is ' + workingDir);
-  // console.log('startServer() - resourcesDir is ' + resourcesDir);
+  if (serverProcess && serverProcess.exitCode === null) {
+    return serverProcess;
+  }
+
+  // console.log('resourcesDir is ' + env.APP_RESOURCES_DIR);
+  // console.log('startServer() - workingDir is ' + APP_ROOT_DIR);
   // console.log('startServer() - env is ', env);
-  serverProcess = spawn(serverPath, [], {
+
+  serverProcess = spawn(SERVER_EXECUTABLE_PATH, [], {
     stdio: 'ignore',
-    detached: true,
+    detached: false,
     env: env,
-    cwd: workingDir
+    cwd: APP_ROOT_DIR,
   });
-  serverProcess.unref();
-  // console.log('startServer() - Server started at ' + path.join(workingDir, serverPath));
+
+  serverExitPromise = new Promise((resolve) => {
+    serverProcess.once('exit', (code, signal) => {
+      console.log(
+        `startServer() - Server exited. code=${code}, signal=${signal}`
+      );
+
+      serverProcess = null;
+      resolve({ code, signal });
+    });
+
+    serverProcess.once('error', (err) => {
+      console.error('startServer() - Server process error:', err);
+    });
+  });
+
+  return serverProcess;
 }
 
-function stopServer() {
-  if (serverProcess) {
-    // Kill the process we spawned (or use another mechanism if you need gentle shutdown)
+function waitForProcessExit(timeoutMs) {
+  if (!serverProcess || !serverExitPromise) {
+    return Promise.resolve(true);
+  }
+
+  return Promise.race([
+    serverExitPromise.then(() => true),
+    delay(timeoutMs).then(() => false),
+  ]);
+}
+
+function forceKillProcess(processToKill) {
+  if (!processToKill || processToKill.pid == null) {
+    return Promise.resolve();
+  }
+
+  const pid = String(processToKill.pid);
+
+  if (process.platform === 'win32') {
+    return new Promise((resolve) => {
+      // Kill the process we spawned and any children it created.
+      execFile(
+        'taskkill',
+        ['/pid', pid, '/t', '/f'],
+        (error, stdout, stderr) => {
+          if (error) {
+            console.error(
+              'stopServer() - Windows forceful termination failed:',
+              error.message
+            );
+          }
+
+          resolve();
+        }
+      );
+    });
+  }
+
+  return new Promise((resolve) => {
     try {
-      process.kill(serverProcess.pid);
-      console.log('stopServer() - Server stopped.');
+      process.kill(processToKill.pid, 'SIGKILL');
+      console.log('stopServer() - Server forcefully terminated.');
     } catch (e) {
       // It may have already exited
-      console.error('stopServer() - Server Failed to stop - process ID kill failed.');
+      if (e.code !== 'ESRCH') {
+        console.error(
+          'stopServer() - Server forceful termination failed:',
+          e.message
+        );
+      }
     }
-  } else {
-    // Optionally: kill whatever is listening on port
+
+    resolve();
+  });
+}
+
+async function stopServer() {
+  if (stopPromise) {
+    return stopPromise;
+  }
+
+  stopPromise = (async () => {
+    const processToStop = serverProcess;
+
+    if (!processToStop) {
+      console.log('stopServer() - No owned server process to stop.');
+      return;
+    }
+
+    if (processToStop.exitCode !== null || processToStop.killed) {
+      console.log('stopServer() - Server has already exited.');
+      return;
+    }
+
+    // Kill the process we spawned (or use another mechanism if you need gentle shutdown)
     try {
-      console.log('stopServer() - Trying to stop server forcefully.');
-      execSync(`lsof -t -i:${env.ROCKET_PORT} | xargs kill -9`); // but lsof does not exist in Windows
-      console.log('stopServer() - Server stopped forcefully.');
-    } catch {
-      // ignore if nothing is running
-      console.error(`stopServer() - Server Failed to stop - process at port ${env.ROCKET_PORT} ID kill failed.`);
+      processToStop.kill('SIGTERM');
+      console.log('stopServer() - Server termination requested.');
+    } catch (e) {
+      // It may have already exited
+      if (e.code !== 'ESRCH') {
+        console.error(
+          'stopServer() - Server termination request failed:',
+          e.message
+        );
+      }
     }
+
+    const exited = await waitForProcessExit(3000);
+
+    if (!exited) {
+      console.log(
+        'stopServer() - Server did not exit in time; terminating forcefully.'
+      );
+      await forceKillProcess(processToStop);
+      await waitForProcessExit(2000);
+    }
+
+    if (serverProcess === processToStop) {
+      serverProcess = null;
+    }
+
+    console.log('stopServer() - Server shutdown handling complete.');
+  })();
+
+  try {
+    return await stopPromise;
+  } finally {
+    stopPromise = null;
   }
 }
 
@@ -97,6 +208,4 @@ module.exports = {
   stopServer,
   waitForServerReady,
   delay,
-  MAC_SERVER_PATH,
-  WIN_SERVER_PATH,
 };
