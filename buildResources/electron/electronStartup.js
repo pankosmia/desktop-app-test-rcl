@@ -107,7 +107,7 @@ if (!hasSingleInstanceLock) {
       shutdownStarted = true;
       event.preventDefault();
 
-      const maximumShutdownTimeMs = 7000;
+      const maximumShutdownTimeMs = 15000;
 
       const shutdownTimeout = new Promise((resolve) => {
         setTimeout(() => {
