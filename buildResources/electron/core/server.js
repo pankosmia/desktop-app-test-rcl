@@ -2,7 +2,6 @@ const { spawn, execFile } = require('child_process');
 
 const {
   env,
-  START_SERVER,
   APP_ROOT_DIR,
   SERVER_EXECUTABLE_PATH,
 } = require('../config/paths');
@@ -11,9 +10,58 @@ let serverProcess = null;
 let serverExitPromise = null;
 let stopPromise = null;
 
+let serverPort = null;
+let serverVersion = null;
+
+const MIN_GRACEFUL_SHUTDOWN_VERSION = '0.18.8';
+
 function delay(ms) {
   return new Promise((resolve) =>
     setTimeout(resolve, ms)
+  );
+}
+
+function parseVersion(version) {
+  if (typeof version !== 'string') {
+    return null;
+  }
+
+  const match = version.trim().match(/^(\d+)\.(\d+)\.(\d+)/);
+
+  if (!match) {
+    return null;
+  }
+
+  return {
+    major: Number(match[1]),
+    minor: Number(match[2]),
+    patch: Number(match[3]),
+  };
+}
+
+function isVersionAtLeast(version, minimumVersion) {
+  const actual = parseVersion(version);
+  const minimum = parseVersion(minimumVersion);
+
+  if (!actual || !minimum) {
+    return false;
+  }
+
+  if (actual.major !== minimum.major) {
+    return actual.major > minimum.major;
+  }
+
+  if (actual.minor !== minimum.minor) {
+    return actual.minor > minimum.minor;
+  }
+
+  return actual.patch >= minimum.patch;
+}
+
+function supportsGracefulShutdown() {
+  return isVersionAtLeast(
+    serverVersion,
+    MIN_GRACEFUL_SHUTDOWN_VERSION
   );
 }
 
@@ -35,17 +83,29 @@ async function waitForServerReady(port, opts = {}) {
         // Avoid any caching surprises during startup probing:
         cache: 'no-store',
       });
-      if (res.ok) return; // server is ready
-      // A response but not 2xx (e.g. 404/500 while booting) → keep trying.
-      lastError = new Error(`Unexpected status ${res.status} from ${url}`);
+
+      if (res.ok) {
+        try {
+          return await res.json(); // server is ready
+        } catch {
+          // The endpoint responded successfully, but the body was not valid JSON.
+          // Readiness is still based on the successful response.
+          return {};
+        }
+      } else {
+        // A response but not 2xx (e.g. 404/500 while booting) → keep trying.
+        lastError = new Error(`Unexpected status ${res.status} from ${url}`);
+      }
     } catch (err) {
-      // ECONNREFUSED, socket reset, DNS, or per-request AbortError → keep trying.
+      // ECONNREFUSED, socket reset, DNS, invalid JSON,
+      // or per-request AbortError → keep trying.
       lastError = err;
     }
 
     // Guard against sleeping when there's not enough time left
     const remaining = deadline - Date.now();
     if (remaining <= 0) break;
+
     await delay(Math.min(intervalMs, remaining));
   }
 
@@ -53,23 +113,29 @@ async function waitForServerReady(port, opts = {}) {
     `Server did not become ready within ${overallTimeoutMs} ms` +
     (lastError ? ` (last error: ${lastError.message})` : '')
   );
+
   e.code = 'STARTUP_TIMEOUT'; // <-- tag used to write a friendlier production message
   throw e;
 }
 
-function startServer() {
+function startServer(port) {
   if (serverProcess && serverProcess.exitCode === null) {
     return serverProcess;
   }
 
-  // console.log('resourcesDir is ' + env.APP_RESOURCES_DIR);
+  console.log('resourcesDir is ' + env.APP_RESOURCES_DIR);
   // console.log('startServer() - workingDir is ' + APP_ROOT_DIR);
   // console.log('startServer() - env is ', env);
+
+  serverPort = port;
+  serverVersion = null;
+
+  env.ROCKET_PORT = String(port);
 
   serverProcess = spawn(SERVER_EXECUTABLE_PATH, [], {
     stdio: 'ignore',
     detached: false,
-    env: env,
+    env,
     cwd: APP_ROOT_DIR,
   });
 
@@ -79,8 +145,12 @@ function startServer() {
         `startServer() - Server exited. code=${code}, signal=${signal}`
       );
 
-      serverProcess = null;
       resolve({ code, signal });
+
+      serverProcess = null;
+      serverExitPromise = null;
+      serverPort = null;
+      serverVersion = null;
     });
 
     serverProcess.once('error', (err) => {
@@ -91,18 +161,33 @@ function startServer() {
   return serverProcess;
 }
 
-function waitForProcessExit(timeoutMs) {
-  if (!serverProcess || !serverExitPromise) {
+function setServerVersion(version) {
+  serverVersion = version;
+}
+
+function waitForProcessExit(processToStop, timeoutMs) {
+  if (!processToStop) {
     return Promise.resolve(true);
   }
 
+  if (processToStop.exitCode !== null) {
+    return Promise.resolve(true);
+  }
+
+  const exitPromise =
+    processToStop === serverProcess && serverExitPromise
+      ? serverExitPromise.then(() => true)
+      : new Promise((resolve) => {
+          processToStop.once('exit', () => resolve(true));
+        });
+
   return Promise.race([
-    serverExitPromise.then(() => true),
+    exitPromise,
     delay(timeoutMs).then(() => false),
   ]);
 }
 
-function forceKillProcess(processToKill) {
+function forceKillProcess(processToKill, timeoutMs = 2000) {
   if (!processToKill || processToKill.pid == null) {
     return Promise.resolve();
   }
@@ -111,21 +196,56 @@ function forceKillProcess(processToKill) {
 
   if (process.platform === 'win32') {
     return new Promise((resolve) => {
+      let settled = false;
+
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        resolve();
+      };
+
       // Kill the process we spawned and any children it created.
-      execFile(
+      const taskkillProcess = execFile(
         'taskkill',
         ['/pid', pid, '/t', '/f'],
         (error, stdout, stderr) => {
           if (error) {
+            // It may have already exited.
             console.error(
               'stopServer() - Windows forceful termination failed:',
               error.message
             );
+
+            if (stderr) {
+              console.error(
+                'stopServer() - taskkill stderr:',
+                stderr
+              );
+            }
+          } else {
+            console.log(
+              'stopServer() - Server forcefully terminated.'
+            );
           }
 
-          resolve();
+          finish();
         }
       );
+
+      const timeout = setTimeout(() => {
+        console.error(
+          'stopServer() - taskkill timed out; terminating taskkill itself.'
+        );
+
+        try {
+          taskkillProcess.kill();
+        } catch {
+          // taskkill may already have exited
+        }
+
+        finish();
+      }, timeoutMs);
     });
   }
 
@@ -147,6 +267,32 @@ function forceKillProcess(processToKill) {
   });
 }
 
+async function requestGracefulShutdown(port) {
+  const url = `http://127.0.0.1:${port}/api/system/shutdown`;
+
+  const res = await fetch(url, {
+    method: 'POST',
+    signal: AbortSignal.timeout(2000),
+    cache: 'no-store',
+  });
+
+  if (!res.ok) {
+    throw new Error(
+      `Graceful shutdown returned HTTP status ${res.status}.`
+    );
+  }
+
+  const body = await res.json();
+
+  if (!body || body.is_good !== true) {
+    throw new Error(
+      'Graceful shutdown returned an unsuccessful response.'
+    );
+  }
+
+  console.log('stopServer() - Graceful shutdown requested.');
+}
+
 async function stopServer() {
   if (stopPromise) {
     return stopPromise;
@@ -154,46 +300,58 @@ async function stopServer() {
 
   stopPromise = (async () => {
     const processToStop = serverProcess;
+    const portToStop = serverPort;
 
     if (!processToStop) {
       console.log('stopServer() - No owned server process to stop.');
       return;
     }
 
-    if (processToStop.exitCode !== null || processToStop.killed) {
+    if (processToStop.exitCode !== null) {
       console.log('stopServer() - Server has already exited.');
       return;
     }
 
-    // Kill the process we spawned (or use another mechanism if you need gentle shutdown)
-    try {
-      processToStop.kill('SIGTERM');
-      console.log('stopServer() - Server termination requested.');
-    } catch (e) {
-      // It may have already exited
-      if (e.code !== 'ESRCH') {
+    const shouldAttemptGracefulShutdown =
+      !serverVersion ||
+      isVersionAtLeast(
+        serverVersion,
+        MIN_GRACEFUL_SHUTDOWN_VERSION
+      );
+
+    if (shouldAttemptGracefulShutdown && portToStop !== null) {
+      try {
+        await requestGracefulShutdown(portToStop);
+
+        if (await waitForProcessExit(processToStop, 5000)) {
+          console.log(
+            'stopServer() - Server stopped gracefully.'
+          );
+          return;
+        }
+
+        console.log(
+          'stopServer() - Graceful shutdown timed out.'
+        );
+      } catch (err) {
         console.error(
-          'stopServer() - Server termination request failed:',
-          e.message
+          'stopServer() - Graceful shutdown failed:',
+          err.message
         );
       }
     }
 
-    const exited = await waitForProcessExit(3000);
+    await forceKillProcess(processToStop, 2000);
 
-    if (!exited) {
+    if (await waitForProcessExit(processToStop, 2000)) {
       console.log(
-        'stopServer() - Server did not exit in time; terminating forcefully.'
+        'stopServer() - Server stopped forcefully.'
       );
-      await forceKillProcess(processToStop);
-      await waitForProcessExit(2000);
+    } else {
+      console.error(
+        'stopServer() - Server did not confirm exit after forceful termination.'
+      );
     }
-
-    if (serverProcess === processToStop) {
-      serverProcess = null;
-    }
-
-    console.log('stopServer() - Server shutdown handling complete.');
   })();
 
   try {
@@ -208,4 +366,5 @@ module.exports = {
   stopServer,
   waitForServerReady,
   delay,
+  setServerVersion,
 };
