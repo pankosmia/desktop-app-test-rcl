@@ -1,6 +1,6 @@
 const path = require('path');
 const { app, BrowserWindow, Menu, dialog, ipcMain } = require('electron');
-const { env, ELECTRON_ROOT_DIR } = require('../config/paths');
+const { env, START_SERVER, ELECTRON_ROOT_DIR } = require('../config/paths');
 
 let canClose = true;
 
@@ -22,6 +22,7 @@ function installAudioCaptureHandlers(ses) {
 
 function createWindow() {
   const win = new BrowserWindow({
+    title: app.name,
     width: 1024,
     height: 768,
     minWidth: 900,
@@ -48,6 +49,14 @@ function createWindow() {
       win.show();
       win.maximize();
     }, 300);
+  });
+
+  // Append " (Dev)" to page title in the development environment
+  win.on('page-title-updated', (e, title) => {
+    if (!START_SERVER) {
+      e.preventDefault();
+      win.setTitle(`${title} (Dev)`);
+    }
   });
 
   // Show a dialog to the user to confirm the close
