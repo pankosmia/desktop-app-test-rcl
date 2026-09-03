@@ -4,6 +4,7 @@ const {
   startServer,
   stopServer,
   waitForServerReady,
+  setServerVersion,
 } = require('./server');
 
 // Injected by the orchestrator (electronStartup.js) to avoid a circular dependency with window.js.
@@ -17,11 +18,15 @@ function setCreateWindow(fn) {
 
 async function attemptStartup(port) {
   if (START_SERVER) {
-    startServer();
+    startServer(port);
   }
 
   try {
-    await waitForServerReady(port);
+    const serverInfo = await waitForServerReady(port);
+    if (serverInfo && typeof serverInfo.pkg_version === 'string') {
+      setServerVersion(serverInfo.pkg_version);
+    }
+    return serverInfo;
   } catch (err) {
     if (START_SERVER) {
       await stopServer();

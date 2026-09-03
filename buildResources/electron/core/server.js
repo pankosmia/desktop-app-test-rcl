@@ -85,13 +85,7 @@ async function waitForServerReady(port, opts = {}) {
       });
 
       if (res.ok) {
-        try {
-          return await res.json(); // server is ready
-        } catch {
-          // The endpoint responded successfully, but the body was not valid JSON.
-          // Readiness is still based on the successful response.
-          return {};
-        }
+        return await res.json(); // server is ready
       } else {
         // A response but not 2xx (e.g. 404/500 while booting) → keep trying.
         lastError = new Error(`Unexpected status ${res.status} from ${url}`);
