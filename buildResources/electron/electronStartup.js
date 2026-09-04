@@ -24,6 +24,7 @@
  * - Environment variable APP_NAME must be set for proper application naming
  */
 const { app, BrowserWindow, ipcMain } = require('electron');
+const path = require('path');
 
 const { env, START_SERVER } = require('./config/paths');
 const { getPort } = require('./core/ports');
@@ -38,7 +39,12 @@ const { registerFirefoxHandlers } = require('./features/firefox'); // Can omit f
 const { registerPdfHandlers } = require('./features/pdf');          // Can omit for a no-Puppeteer app, with node_modules also to reduce.
 const { registerFfmpegHandlers } = require('./features/ffmpeg');    // Can omit for a no-FFMPEG app, with node_modules also to reduce.
 
-app.name = '${APP_NAME}';
+if (START_SERVER) {
+  app.setName('${APP_NAME}');
+} else {
+  app.setName('${APP_NAME} (Dev)');
+  app.setPath('userData', path.join(app.getPath('appData'), '${APP_NAME}-dev'));  
+}
 
 let shutdownStarted = false;
 
@@ -107,7 +113,7 @@ if (!hasSingleInstanceLock) {
       shutdownStarted = true;
       event.preventDefault();
 
-      const maximumShutdownTimeMs = 7000;
+      const maximumShutdownTimeMs = 15000;
 
       const shutdownTimeout = new Promise((resolve) => {
         setTimeout(() => {
